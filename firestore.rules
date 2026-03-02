@@ -1,29 +1,168 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
+    function role() {
+      return request.auth != null ? request.auth.token.role : null;
+    }
+    function hasRole(r) {
+      return role() == r;
+    }
+    function inRoles(list) {
+      return role() in list;
+    }
     function isSignedIn() {
       return request.auth != null;
     }
 
+    // ============================================
+    // PRODUCTION SYSTEM (ais-cv / ais-dashboard)
+    // ============================================
+
+    // production pieces: any authenticated user can read; only admin may write
+    match /production/{day}/pieces/{pieceId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole('admin');
+    }
+
+    // legacy pieces path fallback: production/pieces/{day}/{pieceId}
+    match /production/pieces/{day}/{pieceId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole('admin');
+    }
+
+    // events: read for any authenticated user, write only admin
+    match /production/{day}/events/{eventId} {
+      allow read: if isSignedIn();
+      allow create: if inRoles(['operator','admin']) && request.resource.data.type == 'break';
+      allow update: if inRoles(['operator','admin']) && resource.data.type == 'break';
+      allow delete: if hasRole('admin');
+    }
+
+    // summaries (day/hour): read for any authenticated user, writes only admin
+    match /production/{day}/summaries/{docId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole('admin');
+    }
+
+    // meta daily summaries: read for any authenticated user, write admin only
+    match /production_meta_summary/{day} {
+      allow read: if isSignedIn();
+      allow write: if hasRole('admin');
+    }
+
+    // rolling kpis: read for any authenticated user, write admin only
+    match /production_meta_rolling_kpis/{window} {
+      allow read: if isSignedIn();
+      allow write: if hasRole('admin');
+    }
+
+    // health heartbeats (limit raw exposure): read for operator/admin, write admin only
+    match /health/{day}/heartbeats/{stamp} {
+      allow read: if inRoles(['operator','admin']);
+      allow write: if hasRole('admin');
+    }
+
+    // app/config documents (takt, settings): read for any authenticated user, write admin only
+    match /configs/{docId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole('admin');
+    }
+
+    // roles management docs: only admins can read/write
+    match /roles/{uid} {
+      allow read: if hasRole('admin');
+      allow write: if hasRole('admin');
+    }
+
+    // cv system collections
+    match /sessions/{document=**} {
+      allow read: if true;
+      allow write: if hasRole('admin');
+    }
+
+    match /counts/{document=**} {
+      allow read: if true;
+      allow write: if hasRole('admin');
+    }
+
+    match /daily/{document=**} {
+      allow read: if true;
+      allow write: if hasRole('admin');
+    }
+
+    match /hourly/{document=**} {
+      allow read: if true;
+      allow write: if hasRole('admin');
+    }
+
+    match /live/{document=**} {
+      allow read: if true;
+      allow write: if hasRole('admin');
+    }
+
+    // ============================================
+    // WEBSITE ANALYTICS (ais-website)
+    // ============================================
+
+    match /scan_events/{document=**} {
+      allow create: if true;        // Public writes from verify page
+      allow read: if isSignedIn();  // Admin reads require auth
+    }
+
+    match /customer_data/{document=**} {
+      allow create: if true;        // Public form submissions
+      allow read: if isSignedIn();
+    }
+
+    match /page_views/{document=**} {
+      allow create: if true;        // PageTracker writes
+      allow read: if isSignedIn();
+    }
+
+    match /engagement_events/{document=**} {
+      allow create: if true;
+      allow read: if isSignedIn();
+    }
+
+    match /contact_submissions/{document=**} {
+      allow create: if true;
+      allow read: if isSignedIn();
+    }
+
+    // ============================================
+    // SALES DASHBOARD (ais-sales)
+    // ============================================
+
     match /sales/{document=**} {
       allow read: if isSignedIn();
+      allow write: if false;
     }
 
     match /customers/{document=**} {
       allow read: if isSignedIn();
+      allow write: if false;
     }
 
     match /items/{document=**} {
       allow read: if isSignedIn();
+      allow write: if false;
     }
 
     match /purchases_data/{document=**} {
       allow read: if isSignedIn();
+      allow write: if false;
     }
 
     match /_meta/{document=**} {
       allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ============================================
+    // DEFAULT DENY
+    // ============================================
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
