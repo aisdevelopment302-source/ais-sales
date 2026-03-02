@@ -1,0 +1,11 @@
+
+> frontend@0.1.0 build
+> next build
+
+▲ Next.js 16.1.6 (Turbopack)
+
+  Creating an optimized production build ...
+
+> Build error occurred
+Error: ENOENT: no such file or directory, open '/home/adityajain/AIS/ais-sales/.next/static/a1BXcepodqBGWM6LqGSP1/_buildManifest.js.tmp.zdukwmu70qi'
+    at ignore-listed frames

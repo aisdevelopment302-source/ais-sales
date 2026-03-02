@@ -1,0 +1,51 @@
+name: Build & Deploy to Firebase
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'app/**'
+      - 'components/**'
+      - 'lib/**'
+      - 'public/**'
+      - 'package.json'
+      - 'next.config.ts'
+      - 'tsconfig.json'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+      
+      - name: Build Next.js app
+        run: npm run build
+      
+      - name: Setup Firebase CLI
+        run: npm install -g firebase-tools
+      
+      - name: Create Firebase config
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > ./firebase-service-account.json
+      
+      - name: Deploy to Firebase
+        run: firebase deploy --only hosting --project ais-production-e013c
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ./firebase-service-account.json
+      
+      - name: Deployment Summary
+        run: echo "✅ Dashboard deployed to https://ais-production-e013c.web.app"
