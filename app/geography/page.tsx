@@ -5,6 +5,7 @@ import { formatCurrency, formatNumber } from "@/lib/api";
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
+import { useAuth } from "@/lib/auth";
 
 const GST_STATES: Record<string, string> = {
   "01": "Jammu & Kashmir", "02": "Himachal Pradesh", "03": "Punjab",
@@ -36,12 +37,14 @@ interface StateRow {
 const COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"];
 
 export default function GeographyPage() {
+  const { user } = useAuth();
   const [states, setStates] = useState<StateRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
   const fetchData = async () => {
+    if (!user) return;
     setLoading(true);
     try {
       const [salesSnap, customersSnap] = await Promise.all([
@@ -101,7 +104,7 @@ export default function GeographyPage() {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user]);
 
   const totalSales = states.reduce((s, r) => s + r.total_sales, 0);
   const totalWeight = states.reduce((s, r) => s + r.total_weight, 0);

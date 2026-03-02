@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { formatCurrency } from "@/lib/api";
 import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
+import { useAuth } from "@/lib/auth";
 
 const PAGE_SIZE = 50;
 
@@ -34,6 +35,7 @@ interface Customer {
 }
 
 export default function CustomersPage() {
+  const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -42,6 +44,7 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!user) return;
     const loadData = async () => {
       setLoading(true);
       try {
@@ -92,7 +95,7 @@ export default function CustomersPage() {
       }
     };
     loadData();
-  }, []);
+  }, [user]);
 
   // Derived: filtered + paginated
   const filtered = useCallback(() => {

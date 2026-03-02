@@ -5,6 +5,7 @@ import { formatCurrency, formatMonth } from "@/lib/api";
 import SalesChart from "@/components/SalesChart";
 import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
+import { useAuth } from "@/lib/auth";
 
 const PAGE_SIZE = 50;
 
@@ -44,6 +45,7 @@ interface MonthlyRow {
 }
 
 export default function SalesPage() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"active" | "cancelled">("active");
 
   const [fromDate, setFromDate] = useState("");
@@ -57,6 +59,7 @@ export default function SalesPage() {
 
   // Load all data once from Firestore
   useEffect(() => {
+    if (!user) return;
     const loadData = async () => {
       setLoading(true);
       try {
@@ -100,7 +103,7 @@ export default function SalesPage() {
       }
     };
     loadData();
-  }, []);
+  }, [user]);
 
   // Derived: filtered bills + monthly rows
   const { filteredBills, monthlyRows } = useCallback(() => {

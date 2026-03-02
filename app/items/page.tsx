@@ -5,6 +5,7 @@ import { formatCurrency } from "@/lib/api";
 import ItemsChart from "@/components/ItemsChart";
 import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
+import { useAuth } from "@/lib/auth";
 
 interface ItemRow {
   id: number;
@@ -18,6 +19,7 @@ interface ItemRow {
 }
 
 export default function ItemsPage() {
+  const { user } = useAuth();
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [itemGroup, setItemGroup] = useState("");
@@ -26,6 +28,7 @@ export default function ItemsPage() {
   const [loading, setLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
     try {
       const [salesSnap, itemsSnap] = await Promise.all([
@@ -104,12 +107,12 @@ export default function ItemsPage() {
     } finally {
       setLoading(false);
     }
-  }, [fromDate, toDate, itemGroup]);
+  }, [fromDate, toDate, itemGroup, user]);
 
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user]);
 
   const totalSales = items.reduce((s, i) => s + (i.total_sales || 0), 0);
   const maxSales = items[0]?.total_sales || 1;

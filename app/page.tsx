@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import DashboardCharts from "@/components/DashboardCharts";
 import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
+import { useAuth } from "@/lib/auth";
 
 function formatCurrency(value: number | null | undefined): string {
   if (value == null) return "-";
@@ -50,12 +51,14 @@ interface MonthlyRow {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [monthly, setMonthly] = useState<MonthlyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!user) return;
     const fetchData = async () => {
       try {
         // Fetch from Firestore collections
@@ -196,7 +199,7 @@ export default function DashboardPage() {
     };
 
     fetchData();
-  }, []);
+  }, [user]);
 
   if (loading) return <div style={{ padding: 20 }}>Loading dashboard...</div>;
   if (error || !summary) return <div style={{ padding: 20, color: "red" }}>Error: {error}</div>;

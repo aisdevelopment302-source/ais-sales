@@ -5,6 +5,7 @@ import { formatCurrency, formatNumber } from "@/lib/api";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
+import { useAuth } from "@/lib/auth";
 
 interface CityRow {
   accode: string;
@@ -27,6 +28,7 @@ const STATE_OPTIONS: StateOption[] = [
 ];
 
 export default function CitiesPage() {
+  const { user } = useAuth();
   const [selectedState, setSelectedState] = useState("27");
   const [cities, setCities] = useState<CityRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,6 +36,7 @@ export default function CitiesPage() {
   const [toDate, setToDate] = useState("");
 
   const fetchCities = async (stateCode: string) => {
+    if (!user) return;
     setLoading(true);
     try {
       const [salesSnap, customersSnap] = await Promise.all([
@@ -99,7 +102,7 @@ export default function CitiesPage() {
   useEffect(() => {
     fetchCities(selectedState);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user]);
 
   const handleStateChange = (stateCode: string) => {
     setSelectedState(stateCode);

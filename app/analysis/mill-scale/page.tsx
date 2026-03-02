@@ -5,6 +5,7 @@ import { formatCurrency, formatNumber } from "@/lib/api";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
+import { useAuth } from "@/lib/auth";
 
 interface MonthlyRow {
   month: string;
@@ -21,12 +22,14 @@ interface SummaryKPI {
 const MILL_SCALE_ID = 11;
 
 export default function MillScaleAnalysisPage() {
+  const { user } = useAuth();
   const [monthly, setMonthly] = useState<MonthlyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
   const fetchMonthly = async () => {
+    if (!user) return;
     setLoading(true);
     try {
       const salesSnap = await getDocs(collection(db, "sales"));
@@ -65,7 +68,7 @@ export default function MillScaleAnalysisPage() {
   useEffect(() => {
     fetchMonthly();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user]);
 
   const totalSales = monthly.reduce((sum, m) => sum + (m.total_sales || 0), 0);
   const totalWeight = monthly.reduce((sum, m) => sum + (m.total_weight || 0), 0);
