@@ -5,6 +5,7 @@ import {
   User,
   GoogleAuthProvider,
   signInWithRedirect,
+  getRedirectResult,
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from "firebase/auth";
@@ -29,11 +30,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setLoading(false);
-    });
-    return unsub;
+    // First, resolve any pending redirect sign-in result.
+    // This must complete before we start listening to auth state,
+    // otherwise pages may fire Firestore reads while user is still null.
+    getRedirectResult(auth)
+      .catch(() => {})
+      .finally(() => {
+        const unsub = onAuthStateChanged(auth, (u) => {
+          setUser(u);
+          setLoading(false);
+        });
+        return unsub;
+      });
   }, []);
 
   const signInWithGoogle = async () => {
