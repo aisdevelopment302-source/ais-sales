@@ -59,10 +59,10 @@ export default function DashboardPage() {
     const fetchData = async () => {
       try {
         // Fetch from Firestore collections
-        const salesDocs = await getDocs(collection(db, "sales_data"));
+        const salesDocs = await getDocs(collection(db, "sales"));
         const purchaseDocs = await getDocs(collection(db, "purchases_data"));
-        const customerDocs = await getDocs(collection(db, "customers_data"));
-        const itemDocs = await getDocs(collection(db, "items_data"));
+        const customerDocs = await getDocs(collection(db, "customers"));
+        const itemDocs = await getDocs(collection(db, "items"));
 
         // Aggregate sales data
         let total_bills = 0;
@@ -106,14 +106,23 @@ export default function DashboardPage() {
           total_purchase_amount += data.bill_amount || 0;
         });
 
-        // Get top customers
-        const customerMap = new Map<string, { bill_count: number; total_sales: number }>();
+        // Get top customers from sales docs
+        const customerNameMap = new Map<string, string>();
         customerDocs.forEach((doc) => {
           const data = doc.data();
-          const existing = customerMap.get(data.name) || { bill_count: 0, total_sales: 0 };
-          customerMap.set(data.name, {
+          customerNameMap.set(String(data.code ?? doc.id), data.name ?? doc.id);
+        });
+
+        const customerMap = new Map<string, { bill_count: number; total_sales: number }>();
+        salesDocs.forEach((doc) => {
+          const data = doc.data();
+          if (data.status === "cancelled" || data.type === "credit_note") return;
+          const cid = String(data.customer_id ?? "");
+          const name = customerNameMap.get(cid) ?? cid;
+          const existing = customerMap.get(name) || { bill_count: 0, total_sales: 0 };
+          customerMap.set(name, {
             bill_count: existing.bill_count + 1,
-            total_sales: existing.total_sales + (data.total_sales || 0),
+            total_sales: existing.total_sales + (data.bill_amount || 0),
           });
         });
         const top_customers = Array.from(customerMap.entries())
@@ -121,14 +130,25 @@ export default function DashboardPage() {
           .sort((a, b) => b.total_sales - a.total_sales)
           .slice(0, 5);
 
-        // Get top items
-        const itemMap = new Map<string, { total_sales: number; total_weight: number }>();
+        // Get top items from sales docs
+        const itemNameMap = new Map<string, string>();
         itemDocs.forEach((doc) => {
           const data = doc.data();
-          const existing = itemMap.get(data.name) || { total_sales: 0, total_weight: 0 };
-          itemMap.set(data.name, {
-            total_sales: existing.total_sales + (data.total_sales || 0),
-            total_weight: existing.total_weight + (data.total_weight || 0),
+          itemNameMap.set(String(data.code ?? doc.id), data.name ?? doc.id);
+        });
+
+        const itemMap = new Map<string, { total_sales: number; total_weight: number }>();
+        salesDocs.forEach((doc) => {
+          const data = doc.data();
+          if (data.status === "cancelled" || data.type === "credit_note") return;
+          (data.items || []).forEach((item: { itemcode?: number; qty?: number; amount?: number }) => {
+            const iid = String(item.itemcode ?? "");
+            const name = itemNameMap.get(iid) ?? iid;
+            const existing = itemMap.get(name) || { total_sales: 0, total_weight: 0 };
+            itemMap.set(name, {
+              total_sales: existing.total_sales + (item.amount || 0),
+              total_weight: existing.total_weight + (item.qty || 0),
+            });
           });
         });
         const top_items = Array.from(itemMap.entries())
