@@ -2,11 +2,21 @@
 
 import { useAuth } from "@/lib/auth";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { getRedirectResult } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 export default function LoginPage() {
   const { user, loading, signInWithGoogle } = useAuth();
   const router = useRouter();
+  const [redirectLoading, setRedirectLoading] = useState(true);
+
+  // Complete the redirect sign-in flow when Google redirects back
+  useEffect(() => {
+    getRedirectResult(auth)
+      .catch(() => {})
+      .finally(() => setRedirectLoading(false));
+  }, []);
 
   useEffect(() => {
     if (!loading && user) {
@@ -14,7 +24,7 @@ export default function LoginPage() {
     }
   }, [user, loading, router]);
 
-  if (loading) {
+  if (loading || redirectLoading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
         <div style={{ color: "#64748b" }}>Loading...</div>

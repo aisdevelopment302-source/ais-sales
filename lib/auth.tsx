@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import {
   User,
   GoogleAuthProvider,
-  signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from "firebase/auth";
@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    await signInWithRedirect(auth, provider);
   };
 
   const signOut = async () => {
