@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Sidebar from "@/components/Sidebar";
+import { AuthProvider } from "@/lib/auth";
+import AuthGuard from "@/components/AuthGuard";
 
 export const metadata: Metadata = {
   title: "AIS Sales Analytics",
@@ -16,12 +17,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <div style={{ display: "flex", minHeight: "100vh" }}>
-          <Sidebar />
-          <main style={{ flex: 1, padding: "var(--main-padding)", minWidth: 0, overflow: "hidden" }}>
+        <AuthProvider>
+          <AuthGuard>
             {children}
-          </main>
-        </div>
+          </AuthGuard>
+        </AuthProvider>
       </body>
     </html>
   );

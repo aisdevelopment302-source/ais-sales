@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { useAuth } from "@/lib/auth";
 
 const nav = [
   { href: "/", label: "Dashboard", icon: "📊" },
@@ -20,6 +21,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const { user, signOut } = useAuth();
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
@@ -93,6 +95,31 @@ export default function Sidebar() {
             );
           })}
         </nav>
+
+        {/* User / Sign out */}
+        {user && (
+          <div style={{ padding: "16px", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: "auto" }}>
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {user.email}
+            </div>
+            <button
+              onClick={signOut}
+              style={{
+                width: "100%",
+                padding: "8px 12px",
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 6,
+                color: "#94a3b8",
+                fontSize: 12,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        )}
       </div>
     </>
   );
