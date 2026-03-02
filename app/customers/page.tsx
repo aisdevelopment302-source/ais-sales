@@ -41,7 +41,7 @@ export default function CustomersPage() {
   const [toDate, setToDate] = useState("");
   const [page, setPage] = useState(1);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!user) return;

@@ -55,7 +55,7 @@ export default function SalesPage() {
 
   const [allBills, setAllBills] = useState<Bill[]>([]);
   const [monthly, setMonthly] = useState<MonthlyRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   // Load all data once from Firestore
   useEffect(() => {

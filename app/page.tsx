@@ -51,15 +51,16 @@ interface MonthlyRow {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [monthly, setMonthly] = useState<MonthlyRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
     const fetchData = async () => {
+      setLoading(true);
       try {
         // Fetch from Firestore collections
         const salesDocs = await getDocs(collection(db, "sales"));
@@ -201,7 +202,7 @@ export default function DashboardPage() {
     fetchData();
   }, [user]);
 
-  if (loading) return <div style={{ padding: 20 }}>Loading dashboard...</div>;
+  if (authLoading || loading) return <div style={{ padding: 20 }}>Loading dashboard...</div>;
   if (error || !summary) return <div style={{ padding: 20, color: "red" }}>Error: {error}</div>;
 
   const { company, sales, cancelled, credit_notes, purchases, top_customers, top_items } = summary;

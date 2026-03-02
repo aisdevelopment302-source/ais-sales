@@ -24,7 +24,7 @@ const MILL_SCALE_ID = 11;
 export default function MillScaleAnalysisPage() {
   const { user } = useAuth();
   const [monthly, setMonthly] = useState<MonthlyRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
