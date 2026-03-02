@@ -30,18 +30,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // First, resolve any pending redirect sign-in result.
-    // This must complete before we start listening to auth state,
-    // otherwise pages may fire Firestore reads while user is still null.
-    getRedirectResult(auth)
-      .catch(() => {})
-      .finally(() => {
-        const unsub = onAuthStateChanged(auth, (u) => {
-          setUser(u);
-          setLoading(false);
-        });
-        return unsub;
-      });
+    // Start listening to auth state immediately so loading resolves without
+    // waiting on getRedirectResult (which can hang and keep loading=true forever).
+    // Pages guard their Firestore reads with `if (!user) return`, so it is safe
+    // for the listener to fire before the redirect result is processed.
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+    // Still call getRedirectResult so Firebase can process the redirect sign-in
+    // and update auth state, which will trigger the listener above.
+    getRedirectResult(auth).catch(() => {});
+    return unsub;
   }, []);
 
   const signInWithGoogle = async () => {
