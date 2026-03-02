@@ -1,19 +1,17 @@
-// Firebase configuration for Aadinath Industries Website
-// Connected to ais-central project for analytics & customer data
-// ⚠️ SECURITY: All credentials are read from environment variables (never hardcoded)
+// Firebase configuration for Aadinath Industries Sales Dashboard
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getAnalytics } from 'firebase/analytics';
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+  apiKey: "AIzaSyCBXxSsvjnFzGMMFbHCYouokIQydObeElo",
+  authDomain: "ais-production-e013c.firebaseapp.com",
+  projectId: "ais-production-e013c",
+  storageBucket: "ais-production-e013c.firebasestorage.app",
+  messagingSenderId: "565647781984",
+  appId: "1:565647781984:web:0f05c2436afdcc7a0b1305",
+  measurementId: "G-3WZFKGL4FC",
 };
 
 // Initialize Firebase
