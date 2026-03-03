@@ -4,24 +4,59 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 
-const nav = [
+interface NavChild {
+  href: string;
+  label: string;
+}
+
+interface NavItem {
+  href: string;
+  label: string;
+  icon: string;
+  children?: NavChild[];
+}
+
+const nav: NavItem[] = [
   { href: "/", label: "Dashboard", icon: "📊" },
   { href: "/sales", label: "Sales", icon: "🧾" },
   { href: "/customers", label: "Customers", icon: "👥" },
-  { href: "/items", label: "Items / Products", icon: "📦" },
-  { href: "/analysis/monthly", label: "Monthly Analysis", icon: "📈" },
-  { href: "/analysis/mill-scale", label: "Mill Scale", icon: "⚙️" },
-  { href: "/analysis/melting-scrap", label: "Melting Scrap", icon: "🔥" },
-  { href: "/geography", label: "Geographic", icon: "🌍" },
-  { href: "/geography/cities", label: "Cities", icon: "🏙️" },
-  { href: "/purchases", label: "Purchases", icon: "🛒" },
+  { href: "/items", label: "Items", icon: "📦" },
+  {
+    href: "/geography",
+    label: "Geography",
+    icon: "🌍",
+    children: [
+      { href: "/geography", label: "By State" },
+      { href: "/geography/cities", label: "By City" },
+    ],
+  },
+  {
+    href: "/analysis/overall",
+    label: "Analysis",
+    icon: "📈",
+    children: [
+      { href: "/analysis/overall", label: "Overall" },
+      { href: "/analysis/mill-scale", label: "Mill Scale" },
+      { href: "/analysis/melting-scrap", label: "Melting Scrap" },
+    ],
+  },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user, signOut } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const { user, signOut } = useAuth();
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    // Auto-open groups that contain the current route
+    const open = new Set<string>();
+    nav.forEach((item) => {
+      if (item.children?.some((c) => pathname.startsWith(c.href) && c.href !== "/")) {
+        open.add(item.href);
+      }
+    });
+    return open;
+  });
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
@@ -30,15 +65,32 @@ export default function Sidebar() {
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
+  // Close sidebar on mobile when navigating
   useEffect(() => {
-    if (isMobile) {
-      setIsOpen(false);
-    }
+    if (isMobile) setIsOpen(false);
   }, [pathname, isMobile]);
+
+  // Auto-open group when navigating into it
+  useEffect(() => {
+    nav.forEach((item) => {
+      if (item.children?.some((c) => pathname.startsWith(c.href) && c.href !== "/")) {
+        setOpenGroups((prev) => new Set(prev).add(item.href));
+      }
+    });
+  }, [pathname]);
+
+  const toggleGroup = (href: string) => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(href)) next.delete(href);
+      else next.add(href);
+      return next;
+    });
+  };
 
   return (
     <>
-      {/* Mobile toggle button */}
+      {/* Mobile toggle */}
       {isMobile && (
         <button
           className="sidebar-toggle"
@@ -52,13 +104,7 @@ export default function Sidebar() {
       {/* Mobile overlay */}
       {isMobile && isOpen && (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.5)",
-            zIndex: 999,
-            top: 0,
-          }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 999 }}
           onClick={() => setIsOpen(false)}
         />
       )}
@@ -81,7 +127,74 @@ export default function Sidebar() {
         {/* Nav */}
         <nav style={{ paddingTop: 8 }}>
           {nav.map((item) => {
-            const isActive = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            const hasChildren = !!item.children;
+            const isGroupOpen = openGroups.has(item.href);
+            const isActive = hasChildren
+              ? item.children!.some((c) => pathname === c.href || (c.href !== "/" && pathname.startsWith(c.href)))
+              : item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+
+            if (hasChildren) {
+              return (
+                <div key={item.href}>
+                  {/* Group header — navigates AND toggles */}
+                  <div style={{ display: "flex", alignItems: "center" }}>
+                    <Link
+                      href={item.href}
+                      className={`sidebar-link${isActive ? " active" : ""}`}
+                      style={{ flex: 1, display: "flex", alignItems: "center", gap: 10 }}
+                      onClick={() => isMobile && setIsOpen(false)}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </Link>
+                    <button
+                      onClick={() => toggleGroup(item.href)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        color: "#94a3b8",
+                        padding: "10px 12px",
+                        fontSize: 11,
+                        lineHeight: 1,
+                        transition: "transform 0.2s",
+                        transform: isGroupOpen ? "rotate(90deg)" : "rotate(0deg)",
+                        flexShrink: 0,
+                      }}
+                      aria-label={isGroupOpen ? "Collapse" : "Expand"}
+                    >
+                      ›
+                    </button>
+                  </div>
+
+                  {/* Sub-links */}
+                  {isGroupOpen && (
+                    <div>
+                      {item.children!.map((child) => {
+                        const childActive =
+                          child.href === item.href
+                            ? pathname === child.href
+                            : pathname === child.href || pathname.startsWith(child.href);
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            className={`sidebar-link${childActive ? " active" : ""}`}
+                            style={{ paddingLeft: 36, fontSize: 13 }}
+                            onClick={() => isMobile && setIsOpen(false)}
+                          >
+                            <span style={{ color: "#475569", fontSize: 10 }}>└</span>
+                            <span>{child.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // Flat link
             return (
               <Link
                 key={item.href}

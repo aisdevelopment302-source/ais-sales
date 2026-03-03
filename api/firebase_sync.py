@@ -28,15 +28,17 @@ def get_db_connection():
 def sync_customers_data():
     """Sync customer data from xcomp11.DB to Firebase"""
     print("🔄 Syncing customers...")
-    
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     cursor.execute("SELECT accode, acname, addrs1, addrs2, addrs3, gststate, mobile1, email, gstin FROM acmast")
-    
+
+    BATCH_SIZE = 500
     batch = db_firestore.batch()
     count = 0
-    
+    batch_count = 0
+
     for row in cursor.fetchall():
         accode = row['accode']
         customer_data = {
@@ -48,25 +50,43 @@ def sync_customers_data():
             'gststate': row['gststate'],
             'mobile1': row['mobile1'],
             'email': row['email'],
-            'gstin': row['gstin']
+            'gstin': row['gstin'],
         }
-        
+
         batch.set(db_firestore.collection('customers').document(str(accode)), customer_data)
         count += 1
-    
-    batch.commit()
+        batch_count += 1
+
+        if batch_count == BATCH_SIZE:
+            batch.commit()
+            batch = db_firestore.batch()
+            batch_count = 0
+
+    if batch_count > 0:
+        batch.commit()
+
     print(f"✅ Synced {count} customers")
     conn.close()
 
 
 def sync_items_data():
-    """Sync items/products data"""
+    """Sync all items that appear in actual sales data"""
     print("🔄 Syncing items...")
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT itemcode, itemname FROM item WHERE itemcode IN (3, 11, 14)")  # MS ANGLE, MILL SCALE, MELTING SCRAP
+    # Sync every item that has been sold at least once (book L1)
+    cursor.execute("""
+        SELECT DISTINCT i.itemcode, i.itemname, i.unit, i.hsncode, i.gstrate,
+               ig.itemgrpname AS group_name
+        FROM gstsaledet sd
+        JOIN item i ON sd.itemcode = i.itemcode
+        JOIN gstsale s ON sd.book = s.book AND sd.vno = s.vno
+        LEFT JOIN itemgrp ig ON i.itemgrpcode = ig.itemgrpcode
+        WHERE s.book = 'L1'
+        ORDER BY i.itemcode
+    """)
     
     batch = db_firestore.batch()
     count = 0
@@ -75,7 +95,11 @@ def sync_items_data():
         itemcode = row['itemcode']
         item_data = {
             'itemcode': itemcode,
-            'itemname': row['itemname']
+            'itemname': row['itemname'],
+            'unit': row['unit'],
+            'hsncode': row['hsncode'],
+            'gstrate': row['gstrate'],
+            'group_name': row['group_name'],
         }
         
         batch.set(db_firestore.collection('items').document(str(itemcode)), item_data)
@@ -87,57 +111,99 @@ def sync_items_data():
 
 
 def sync_sales_data():
-    """Sync sales data from xcomp11.DB to Firebase"""
+    """Sync all sales data from xcomp11.DB to Firebase, including line-item detail"""
     print("🔄 Syncing sales...")
-    
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    # Fetch all sales with customer info and per-bill qty/rate from line items
+
+    # ── 1. Fetch all bill headers (no LIMIT — full history) ──────────────────
     cursor.execute("""
         SELECT
-            s.vno, s.vdate, s.billno, s.amount, s.billamt,
-            COALESCE(s.cgstamt, 0) + COALESCE(s.sgstamt, 0) + COALESCE(s.igstamt, 0) as gst,
-            COALESCE(s.cessamt, 0) as cess,
+            s.vno, s.vdate, s.billno, s.invno, s.amount, s.billamt,
+            COALESCE(s.cgstamt, 0) + COALESCE(s.sgstamt, 0) + COALESCE(s.igstamt, 0) AS gst,
+            COALESCE(s.cessamt, 0) AS cess,
+            COALESCE(s.invcancelflag, '') AS invcancelflag,
             c.accode, c.acname, c.addrs1, c.addrs2, c.addrs3, c.gststate,
-            COALESCE(SUM(sd.weight), 0) as billqty,
+            COALESCE(SUM(sd.weight), 0) AS billqty,
             CASE WHEN SUM(sd.weight) > 0
                  THEN SUM(sd.taxableamt) / SUM(sd.weight)
-                 ELSE 0 END as basic_rate
+                 ELSE 0 END AS basic_rate
         FROM gstsale s
         LEFT JOIN acmast c ON s.party = c.accode
         LEFT JOIN gstsaledet sd ON sd.book = s.book AND sd.vno = s.vno
         WHERE s.book = 'L1'
         GROUP BY s.vno
         ORDER BY s.vdate DESC
-        LIMIT 500
     """)
-    
+    headers = cursor.fetchall()
+
+    # ── 2. Fetch all line items, indexed by vno ───────────────────────────────
+    cursor.execute("""
+        SELECT
+            sd.vno, sd.srno, sd.itemcode, i.itemname, i.unit,
+            sd.weight, sd.rate, sd.taxableamt, sd.gstper
+        FROM gstsaledet sd
+        JOIN item i ON sd.itemcode = i.itemcode
+        WHERE sd.book = 'L1'
+        ORDER BY sd.vno, sd.srno
+    """)
+    line_items_by_vno: dict = {}
+    for li in cursor.fetchall():
+        vno = li['vno']
+        if vno not in line_items_by_vno:
+            line_items_by_vno[vno] = []
+        line_items_by_vno[vno].append({
+            'srno': li['srno'],
+            'itemcode': li['itemcode'],
+            'itemname': li['itemname'],
+            'unit': li['unit'],
+            'weight': round(float(li['weight'] or 0), 3),
+            'rate': round(float(li['rate'] or 0), 2),
+            'taxableamt': round(float(li['taxableamt'] or 0), 2),
+            'gstper': li['gstper'],
+        })
+
+    # ── 3. Write to Firestore in batches of 500 ───────────────────────────────
+    BATCH_SIZE = 500
     batch = db_firestore.batch()
     count = 0
-    
-    for row in cursor.fetchall():
+    batch_count = 0
+
+    for row in headers:
         vno = row['vno']
         sale_data = {
             'vno': vno,
             'vdate': row['vdate'],
             'billno': row['billno'],
+            'invno': row['invno'],
             'amount': row['amount'],
             'billamt': row['billamt'],
             'gst': row['gst'],
             'cess': row['cess'],
+            'invcancelflag': row['invcancelflag'],
             'customer_accode': row['accode'],
             'customer_name': row['acname'],
             'customer_state': row['gststate'],
-            'customer_address': f"{row['addrs1']} {row['addrs2']} {row['addrs3']}",
+            'customer_address': f"{row['addrs1'] or ''} {row['addrs2'] or ''} {row['addrs3'] or ''}".strip(),
             'billqty': round(float(row['billqty'] or 0), 3),
             'basic_rate': round(float(row['basic_rate'] or 0), 2),
+            'items': line_items_by_vno.get(vno, []),
         }
-        
+
         batch.set(db_firestore.collection('sales').document(str(vno)), sale_data)
         count += 1
-    
-    batch.commit()
+        batch_count += 1
+
+        if batch_count == BATCH_SIZE:
+            batch.commit()
+            print(f"  → committed batch ({count} so far)...")
+            batch = db_firestore.batch()
+            batch_count = 0
+
+    if batch_count > 0:
+        batch.commit()
+
     print(f"✅ Synced {count} sales")
     conn.close()
 
@@ -149,7 +215,7 @@ def sync_summary():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Overall summary
+    # Overall summary — book='L1' only, excluding cancelled bills
     cursor.execute("""
         SELECT 
             COUNT(*) as total_bills,
@@ -157,6 +223,7 @@ def sync_summary():
             SUM(billamt) as total_bill_amount,
             SUM(COALESCE(cgstamt, 0) + COALESCE(sgstamt, 0) + COALESCE(igstamt, 0)) as total_gst
         FROM gstsale
+        WHERE book = 'L1' AND COALESCE(invcancelflag, '') != 'Y'
     """)
     
     summary_row = cursor.fetchone()
