@@ -115,7 +115,8 @@ export default function DashboardPage() {
   }, [user]);
 
   if (authLoading || loading) return <div style={{ padding: 20 }}>Loading dashboard...</div>;
-  if (error || !summary) return <div style={{ padding: 20, color: "red" }}>Error: {error}</div>;
+  if (error) return <div style={{ padding: 20, color: "red" }}>Error: {error}</div>;
+  if (!summary) return <div style={{ padding: 20 }}>Loading dashboard...</div>;
 
   const { company, sales, top_customers, top_items } = summary;
 
