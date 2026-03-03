@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth";
 interface MonthlyRow {
   month: string;
   total_sales: number;
+  total_qty: number;
 }
 
 interface SummaryKPI {
@@ -31,7 +32,7 @@ export default function OverallAnalysisPage() {
     try {
       const salesSnap = await getDocs(collection(db, "sales"));
 
-      const agg: Record<string, { total_sales: number }> = {};
+      const agg: Record<string, { total_sales: number; total_qty: number }> = {};
 
       salesSnap.forEach((doc) => {
         const sale = doc.data();
@@ -42,8 +43,9 @@ export default function OverallAnalysisPage() {
         const month = date.slice(0, 7); // "YYYY-MM"
         if (!month) return;
 
-        if (!agg[month]) agg[month] = { total_sales: 0 };
+        if (!agg[month]) agg[month] = { total_sales: 0, total_qty: 0 };
         agg[month].total_sales += sale.billamt || sale.amount || 0;
+        agg[month].total_qty += sale.billqty ?? 0;
       });
 
       const rows: MonthlyRow[] = Object.entries(agg)
@@ -62,10 +64,14 @@ export default function OverallAnalysisPage() {
   }, [user]);
 
   const totalSales = monthly.reduce((sum, m) => sum + (m.total_sales || 0), 0);
+  const totalQty = monthly.reduce((sum, m) => sum + (m.total_qty || 0), 0);
   const avgMonthly = monthly.length > 0 ? totalSales / monthly.length : 0;
+  const avgRate = totalQty > 0 ? totalSales / totalQty : 0;
 
   const kpis: SummaryKPI[] = [
     { label: "Total Sales", value: formatCurrency(totalSales), color: "#3b82f6" },
+    { label: "Total Qty (MT)", value: formatNumber(totalQty), color: "#10b981" },
+    { label: "Avg Rate (₹/MT)", value: avgRate > 0 ? formatCurrency(avgRate) : "—", color: "#ec4899" },
     { label: "Avg Monthly Sales", value: formatCurrency(avgMonthly), color: "#f59e0b" },
     { label: "Months", value: formatNumber(monthly.length), color: "#8b5cf6" },
   ];
@@ -147,17 +153,32 @@ export default function OverallAnalysisPage() {
                 <thead>
                   <tr>
                     <th>Month</th>
+                    <th style={{ textAlign: "right" }}>Qty (MT)</th>
                     <th style={{ textAlign: "right" }}>Sales (₹)</th>
+                    <th style={{ textAlign: "right" }}>Avg Rate (₹/MT)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {monthly.map((row) => (
-                    <tr key={row.month}>
-                      <td style={{ fontWeight: 500 }}>{row.month}</td>
-                      <td className="num">{formatCurrency(row.total_sales)}</td>
-                    </tr>
-                  ))}
+                  {monthly.map((row) => {
+                    const rate = row.total_qty > 0 ? row.total_sales / row.total_qty : 0;
+                    return (
+                      <tr key={row.month}>
+                        <td style={{ fontWeight: 500 }}>{row.month}</td>
+                        <td className="num">{formatNumber(row.total_qty)}</td>
+                        <td className="num">{formatCurrency(row.total_sales)}</td>
+                        <td className="num">{rate > 0 ? formatCurrency(rate) : "—"}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: "2px solid #e2e8f0", fontWeight: 700 }}>
+                    <td>Total</td>
+                    <td className="num">{formatNumber(totalQty)}</td>
+                    <td className="num">{formatCurrency(totalSales)}</td>
+                    <td className="num">{avgRate > 0 ? formatCurrency(avgRate) : "—"}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>

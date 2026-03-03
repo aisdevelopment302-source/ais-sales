@@ -19,6 +19,8 @@ interface SaleDoc {
   billamt: number;
   gst: number;
   cess: number;
+  billqty: number;
+  basic_rate: number;
 }
 
 interface Bill {
@@ -29,6 +31,8 @@ interface Bill {
   amount: number;
   gst: number;
   billamt: number;
+  billqty: number;
+  basic_rate: number;
 }
 
 interface MonthlyRow {
@@ -37,6 +41,7 @@ interface MonthlyRow {
   taxable_amount: number;
   bill_amount: number;
   gst_amount: number;
+  total_qty: number;
 }
 
 export default function SalesPage() {
@@ -71,6 +76,8 @@ export default function SalesPage() {
             amount: d.amount,
             gst: d.gst ?? 0,
             billamt: d.billamt,
+            billqty: d.billqty ?? 0,
+            basic_rate: d.basic_rate ?? 0,
           });
         });
 
@@ -110,11 +117,13 @@ export default function SalesPage() {
         taxable_amount: 0,
         bill_amount: 0,
         gst_amount: 0,
+        total_qty: 0,
       };
       existing.bill_count += 1;
       existing.taxable_amount += b.amount;
       existing.bill_amount += b.billamt;
       existing.gst_amount += b.gst;
+      existing.total_qty += b.billqty;
       monthMap.set(month, existing);
     });
 
@@ -240,6 +249,8 @@ export default function SalesPage() {
                       <th>Date</th>
                       <th>Bill No</th>
                       <th>Party</th>
+                      <th style={{ textAlign: "right" }}>Qty (MT)</th>
+                      <th style={{ textAlign: "right" }}>Rate (₹/MT)</th>
                       <th style={{ textAlign: "right" }}>Taxable Amt</th>
                       <th style={{ textAlign: "right" }}>GST</th>
                       <th style={{ textAlign: "right" }}>Bill Amt</th>
@@ -254,6 +265,8 @@ export default function SalesPage() {
                         <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {b.party_name}
                         </td>
+                        <td className="num">{b.billqty ? b.billqty.toLocaleString("en-IN", { maximumFractionDigits: 3 }) : "—"}</td>
+                        <td className="num">{b.basic_rate ? formatCurrency(b.basic_rate) : "—"}</td>
                         <td className="num">{b.amount?.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                         <td className="num">{b.gst?.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                         <td className="num" style={{ fontWeight: 600 }}>
@@ -263,7 +276,7 @@ export default function SalesPage() {
                     ))}
                     {pagedBills.length === 0 && (
                       <tr>
-                        <td colSpan={7} style={{ textAlign: "center", color: "#94a3b8", padding: 24 }}>
+                        <td colSpan={9} style={{ textAlign: "center", color: "#94a3b8", padding: 24 }}>
                           No records found
                         </td>
                       </tr>

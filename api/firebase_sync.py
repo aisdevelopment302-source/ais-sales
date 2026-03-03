@@ -93,15 +93,22 @@ def sync_sales_data():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Fetch all sales with customer info
+    # Fetch all sales with customer info and per-bill qty/rate from line items
     cursor.execute("""
-        SELECT 
+        SELECT
             s.vno, s.vdate, s.billno, s.amount, s.billamt,
             COALESCE(s.cgstamt, 0) + COALESCE(s.sgstamt, 0) + COALESCE(s.igstamt, 0) as gst,
             COALESCE(s.cessamt, 0) as cess,
-            c.accode, c.acname, c.addrs1, c.addrs2, c.addrs3, c.gststate
+            c.accode, c.acname, c.addrs1, c.addrs2, c.addrs3, c.gststate,
+            COALESCE(SUM(sd.weight), 0) as billqty,
+            CASE WHEN SUM(sd.weight) > 0
+                 THEN SUM(sd.taxableamt) / SUM(sd.weight)
+                 ELSE 0 END as basic_rate
         FROM gstsale s
         LEFT JOIN acmast c ON s.party = c.accode
+        LEFT JOIN gstsaledet sd ON sd.book = s.book AND sd.vno = s.vno
+        WHERE s.book = 'L1'
+        GROUP BY s.vno
         ORDER BY s.vdate DESC
         LIMIT 500
     """)
@@ -122,7 +129,9 @@ def sync_sales_data():
             'customer_accode': row['accode'],
             'customer_name': row['acname'],
             'customer_state': row['gststate'],
-            'customer_address': f"{row['addrs1']} {row['addrs2']} {row['addrs3']}"
+            'customer_address': f"{row['addrs1']} {row['addrs2']} {row['addrs3']}",
+            'billqty': round(float(row['billqty'] or 0), 3),
+            'basic_rate': round(float(row['basic_rate'] or 0), 2),
         }
         
         batch.set(db_firestore.collection('sales').document(str(vno)), sale_data)

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { formatCurrency } from "@/lib/api";
+import { formatCurrency, formatNumber, formatMonth } from "@/lib/api";
 import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
 import { useAuth } from "@/lib/auth";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 const PAGE_SIZE = 50;
 
@@ -32,6 +33,7 @@ interface Customer {
   bill_count: number;
   taxable_amount: number;
   total_sales: number;
+  total_qty: number;
 }
 
 export default function CustomersPage() {
@@ -41,6 +43,7 @@ export default function CustomersPage() {
   const [toDate, setToDate] = useState("");
   const [page, setPage] = useState(1);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
+  const [monthlyRows, setMonthlyRows] = useState<{ month: string; label: string; bill_count: number; total_sales: number; total_qty: number }[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -53,8 +56,9 @@ export default function CustomersPage() {
         // Aggregate per customer_accode directly from sales docs
         const aggMap = new Map<
           string,
-          { name: string; state_code: string; bill_count: number; taxable_amount: number; total_sales: number }
+          { name: string; state_code: string; bill_count: number; taxable_amount: number; total_sales: number; total_qty: number }
         >();
+        const monthlyMap: Record<string, { bill_count: number; total_sales: number; total_qty: number }> = {};
 
         salesSnap.forEach((doc) => {
           const d = doc.data();
@@ -67,11 +71,22 @@ export default function CustomersPage() {
             bill_count: 0,
             taxable_amount: 0,
             total_sales: 0,
+            total_qty: 0,
           };
           existing.bill_count += 1;
           existing.taxable_amount += d.amount ?? 0;
           existing.total_sales += d.billamt ?? 0;
+          existing.total_qty += d.billqty ?? 0;
           aggMap.set(accode, existing);
+
+          // Monthly aggregation (all customers, no filter)
+          const month = String(d.vdate || "").slice(0, 7);
+          if (month) {
+            if (!monthlyMap[month]) monthlyMap[month] = { bill_count: 0, total_sales: 0, total_qty: 0 };
+            monthlyMap[month].bill_count += 1;
+            monthlyMap[month].total_sales += d.billamt ?? 0;
+            monthlyMap[month].total_qty += d.billqty ?? 0;
+          }
         });
 
         const customers: Customer[] = Array.from(aggMap.entries()).map(([accode, agg]) => ({
@@ -82,10 +97,16 @@ export default function CustomersPage() {
           bill_count: agg.bill_count,
           taxable_amount: agg.taxable_amount,
           total_sales: agg.total_sales,
+          total_qty: agg.total_qty,
         }));
 
         customers.sort((a, b) => b.total_sales - a.total_sales);
         setAllCustomers(customers);
+
+        const monthly = Object.entries(monthlyMap)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([month, stats]) => ({ month, label: formatMonth(month), ...stats }));
+        setMonthlyRows(monthly);
       } finally {
         setLoading(false);
       }
@@ -137,6 +158,58 @@ export default function CustomersPage() {
         </div>
       </div>
 
+      {monthlyRows.length > 0 && (
+        <div className="section-card">
+          <div className="section-title">Monthly Sales Trend</div>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={monthlyRows}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" />
+              <YAxis tickFormatter={(v) => formatCurrency(v)} width={90} />
+              <Tooltip formatter={(value) => (typeof value === "number" ? formatCurrency(value) : value)} />
+              <Legend />
+              <Bar dataKey="total_sales" fill="#3b82f6" name="Sales (₹)" />
+            </BarChart>
+          </ResponsiveContainer>
+          <div style={{ overflowX: "auto", marginTop: 16 }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th style={{ textAlign: "right" }}>Bills</th>
+                  <th style={{ textAlign: "right" }}>Qty (MT)</th>
+                  <th style={{ textAlign: "right" }}>Total Sales</th>
+                  <th style={{ textAlign: "right" }}>Avg Rate (₹/MT)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthlyRows.map((row) => {
+                  const avgRate = row.total_qty > 0 ? row.total_sales / row.total_qty : 0;
+                  return (
+                    <tr key={row.month}>
+                      <td style={{ fontWeight: 500 }}>{row.label}</td>
+                      <td className="num">{row.bill_count}</td>
+                      <td className="num">{formatNumber(row.total_qty)}</td>
+                      <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(row.total_sales)}</td>
+                      <td className="num">{avgRate > 0 ? formatCurrency(avgRate) : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: "2px solid #e2e8f0", fontWeight: 700 }}>
+                  <td>Total</td>
+                  <td className="num">{monthlyRows.reduce((s, r) => s + r.bill_count, 0)}</td>
+                  <td className="num">{formatNumber(monthlyRows.reduce((s, r) => s + r.total_qty, 0))}</td>
+                  <td className="num">{formatCurrency(monthlyRows.reduce((s, r) => s + r.total_sales, 0))}</td>
+                  <td className="num">{(() => { const tq = monthlyRows.reduce((s,r)=>s+r.total_qty,0); const ts = monthlyRows.reduce((s,r)=>s+r.total_sales,0); return tq > 0 ? formatCurrency(ts/tq) : "—"; })()}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="section-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div className="section-title" style={{ marginBottom: 0 }}>Customer Rankings</div>
@@ -156,6 +229,8 @@ export default function CustomersPage() {
                   <th>Customer</th>
                   <th>State</th>
                   <th style={{ textAlign: "right" }}>Bills</th>
+                  <th style={{ textAlign: "right" }}>Qty (MT)</th>
+                  <th style={{ textAlign: "right" }}>Avg Rate (₹/MT)</th>
                   <th style={{ textAlign: "right" }}>Taxable Amt</th>
                   <th style={{ textAlign: "right" }}>Total Sales</th>
                   <th style={{ width: 120 }}>Share</th>
@@ -165,6 +240,7 @@ export default function CustomersPage() {
                 {paged.map((c, i) => {
                   const pct = (c.total_sales / maxSales) * 100;
                   const rank = (page - 1) * PAGE_SIZE + i + 1;
+                  const avgRate = c.total_qty > 0 ? c.total_sales / c.total_qty : 0;
                   return (
                     <tr key={c.accode}>
                       <td style={{ color: "#94a3b8", fontWeight: 600 }}>{rank}</td>
@@ -173,6 +249,8 @@ export default function CustomersPage() {
                         <span className="badge badge-blue">{c.state_name || c.state_code || "—"}</span>
                       </td>
                       <td className="num">{c.bill_count}</td>
+                      <td className="num">{formatNumber(c.total_qty)}</td>
+                      <td className="num">{avgRate > 0 ? formatCurrency(avgRate) : "—"}</td>
                       <td className="num">{formatCurrency(c.taxable_amount)}</td>
                       <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(c.total_sales)}</td>
                       <td>
@@ -193,7 +271,7 @@ export default function CustomersPage() {
                 })}
                 {paged.length === 0 && (
                   <tr>
-                    <td colSpan={7} style={{ textAlign: "center", color: "#94a3b8", padding: 24 }}>
+                    <td colSpan={9} style={{ textAlign: "center", color: "#94a3b8", padding: 24 }}>
                       No customers found
                     </td>
                   </tr>

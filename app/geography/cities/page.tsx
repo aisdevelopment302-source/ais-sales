@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { formatCurrency, formatNumber } from "@/lib/api";
+import { formatCurrency, formatNumber, formatMonth } from "@/lib/api";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
@@ -13,6 +13,7 @@ interface CityRow {
   city: string;
   bill_count: number;
   total_sales: number;
+  total_qty: number;
 }
 
 interface StateOption {
@@ -29,6 +30,9 @@ export default function CitiesPage() {
   const { user } = useAuth();
   const [selectedState, setSelectedState] = useState("27");
   const [cities, setCities] = useState<CityRow[]>([]);
+  const [monthlyRows, setMonthlyRows] = useState<
+    { month: string; label: string; bill_count: number; total_sales: number; total_qty: number }[]
+  >([]);
   const [loading, setLoading] = useState(false);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -42,8 +46,9 @@ export default function CitiesPage() {
       // Aggregate sales per customer_accode for customers in the selected state
       const agg: Record<
         string,
-        { name: string; city: string; bill_count: number; total_sales: number }
+        { name: string; city: string; bill_count: number; total_sales: number; total_qty: number }
       > = {};
+      const monthlyMap: Record<string, { bill_count: number; total_sales: number; total_qty: number }> = {};
 
       salesSnap.forEach((doc) => {
         const sale = doc.data();
@@ -57,12 +62,24 @@ export default function CitiesPage() {
         const accode = String(sale.customer_accode || "");
         const name = sale.customer_name || accode;
         const city = sale.customer_address || "";
+        const billAmt = sale.billamt || sale.amount || 0;
+        const qty = sale.billqty ?? 0;
 
         if (!agg[accode]) {
-          agg[accode] = { name, city, bill_count: 0, total_sales: 0 };
+          agg[accode] = { name, city, bill_count: 0, total_sales: 0, total_qty: 0 };
         }
         agg[accode].bill_count += 1;
-        agg[accode].total_sales += sale.billamt || sale.amount || 0;
+        agg[accode].total_sales += billAmt;
+        agg[accode].total_qty += qty;
+
+        // Monthly aggregation
+        const month = date.slice(0, 7);
+        if (month) {
+          if (!monthlyMap[month]) monthlyMap[month] = { bill_count: 0, total_sales: 0, total_qty: 0 };
+          monthlyMap[month].bill_count += 1;
+          monthlyMap[month].total_sales += billAmt;
+          monthlyMap[month].total_qty += qty;
+        }
       });
 
       const rows: CityRow[] = Object.entries(agg)
@@ -72,10 +89,16 @@ export default function CitiesPage() {
           city: stats.city,
           bill_count: stats.bill_count,
           total_sales: stats.total_sales,
+          total_qty: stats.total_qty,
         }))
         .sort((a, b) => b.total_sales - a.total_sales);
 
+      const monthly = Object.entries(monthlyMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, stats]) => ({ month, label: formatMonth(month), ...stats }));
+
       setCities(rows);
+      setMonthlyRows(monthly);
     } finally {
       setLoading(false);
     }
@@ -104,11 +127,13 @@ export default function CitiesPage() {
       city: cityName,
       customers: customers.length,
       sales: customers.reduce((sum, c) => sum + (c.total_sales || 0), 0),
+      qty: customers.reduce((sum, c) => sum + (c.total_qty || 0), 0),
     }))
     .sort((a, b) => b.sales - a.sales);
 
   const chartData = citySummary.map((c) => ({ name: c.city, sales: c.sales }));
   const totalSales = citySummary.reduce((sum, c) => sum + c.sales, 0);
+  const totalQty = citySummary.reduce((sum, c) => sum + c.qty, 0);
 
   return (
     <>
@@ -166,6 +191,12 @@ export default function CitiesPage() {
             {formatCurrency(totalSales)}
           </div>
         </div>
+        <div className="kpi-card" style={{ borderTop: "3px solid #10b981" }}>
+          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>Total Qty (MT)</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: "#10b981", margin: "6px 0 2px" }}>
+            {formatNumber(totalQty)}
+          </div>
+        </div>
         <div className="kpi-card" style={{ borderTop: "3px solid #f59e0b" }}>
           <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>Cities</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: "#f59e0b", margin: "6px 0 2px" }}>
@@ -184,6 +215,64 @@ export default function CitiesPage() {
         <div style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Loading...</div>
       ) : (
         <>
+          {monthlyRows.length > 0 && (
+            <div className="section-card">
+              <div className="section-title">Monthly Sales Trend</div>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={monthlyRows}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="label" />
+                  <YAxis tickFormatter={(v) => formatCurrency(v)} width={90} />
+                  <Tooltip formatter={(value) => (typeof value === "number" ? formatCurrency(value) : value)} />
+                  <Legend />
+                  <Bar dataKey="total_sales" fill="#3b82f6" name="Sales (₹)" />
+                </BarChart>
+              </ResponsiveContainer>
+              <div style={{ overflowX: "auto", marginTop: 16 }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th style={{ textAlign: "right" }}>Bills</th>
+                      <th style={{ textAlign: "right" }}>Qty (MT)</th>
+                      <th style={{ textAlign: "right" }}>Total Sales</th>
+                      <th style={{ textAlign: "right" }}>Avg Rate (₹/MT)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthlyRows.map((row) => {
+                      const avgRate = row.total_qty > 0 ? row.total_sales / row.total_qty : 0;
+                      return (
+                        <tr key={row.month}>
+                          <td style={{ fontWeight: 500 }}>{row.label}</td>
+                          <td className="num">{row.bill_count}</td>
+                          <td className="num">{formatNumber(row.total_qty)}</td>
+                          <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(row.total_sales)}</td>
+                          <td className="num">{avgRate > 0 ? formatCurrency(avgRate) : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ borderTop: "2px solid #e2e8f0", fontWeight: 700 }}>
+                      <td>Total</td>
+                      <td className="num">{monthlyRows.reduce((s, r) => s + r.bill_count, 0)}</td>
+                      <td className="num">{formatNumber(monthlyRows.reduce((s, r) => s + r.total_qty, 0))}</td>
+                      <td className="num">{formatCurrency(monthlyRows.reduce((s, r) => s + r.total_sales, 0))}</td>
+                      <td className="num">
+                        {(() => {
+                          const totQtyFoot = monthlyRows.reduce((s, r) => s + r.total_qty, 0);
+                          const totSalesFoot = monthlyRows.reduce((s, r) => s + r.total_sales, 0);
+                          return totQtyFoot > 0 ? formatCurrency(totSalesFoot / totQtyFoot) : "—";
+                        })()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
           {chartData.length > 0 && (
             <div className="section-card">
               <div className="section-title">Sales by City</div>
@@ -210,6 +299,7 @@ export default function CitiesPage() {
                     <th>City</th>
                     <th style={{ textAlign: "right" }}>Customers</th>
                     <th style={{ textAlign: "right" }}>Total Sales</th>
+                    <th style={{ textAlign: "right" }}>Qty (MT)</th>
                     <th style={{ width: 100 }}>Share</th>
                   </tr>
                 </thead>
@@ -222,6 +312,7 @@ export default function CitiesPage() {
                         <td style={{ fontWeight: 500 }}>{city.city}</td>
                         <td className="num">{city.customers}</td>
                         <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(city.sales)}</td>
+                        <td className="num">{formatNumber(city.qty)}</td>
                         <td>
                           <div style={{ background: "#f1f5f9", borderRadius: 4, height: 7 }}>
                             <div
@@ -246,6 +337,7 @@ export default function CitiesPage() {
                     <th>City</th>
                     <th>Customer Name</th>
                     <th style={{ textAlign: "right" }}>Bills</th>
+                    <th style={{ textAlign: "right" }}>Qty (MT)</th>
                     <th style={{ textAlign: "right" }}>Sales (₹)</th>
                   </tr>
                 </thead>
@@ -255,6 +347,7 @@ export default function CitiesPage() {
                       <td style={{ color: "#64748b", fontSize: 12 }}>{customer.city}</td>
                       <td style={{ fontWeight: 500 }}>{customer.acname}</td>
                       <td className="num">{customer.bill_count}</td>
+                      <td className="num">{formatNumber(customer.total_qty)}</td>
                       <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(customer.total_sales)}</td>
                     </tr>
                   ))}

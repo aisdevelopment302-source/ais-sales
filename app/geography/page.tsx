@@ -1,8 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { formatCurrency, formatNumber } from "@/lib/api";
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import {
+  BarChart, Bar, LineChart, Line,
+  PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from "recharts";
 import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
 import { useAuth } from "@/lib/auth";
@@ -30,13 +34,19 @@ interface StateRow {
   bill_count: number;
   customer_count: number;
   total_sales: number;
+  total_qty: number;
 }
+
+// Each row is one month; keys beyond "month" are state names mapped to sales ₹
+type MonthlyStateRow = Record<string, string | number> & { month: string };
 
 const COLORS = ["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"];
 
 export default function GeographyPage() {
   const { user } = useAuth();
   const [states, setStates] = useState<StateRow[]>([]);
+  const [monthlyData, setMonthlyData] = useState<MonthlyStateRow[]>([]);
+  const [topStateNames, setTopStateNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -47,11 +57,14 @@ export default function GeographyPage() {
     try {
       const salesSnap = await getDocs(collection(db, "sales"));
 
-      // Aggregate per state using customer_state directly from sales docs
+      // Per-state totals
       const agg: Record<
         string,
-        { bill_count: number; customers: Set<string>; total_sales: number }
+        { bill_count: number; customers: Set<string>; total_sales: number; total_qty: number }
       > = {};
+
+      // Per-state per-month: monthlyByState[month][statename] = { sales, qty }
+      const monthlyByState: Record<string, Record<string, { sales: number; qty: number }>> = {};
 
       salesSnap.forEach((doc) => {
         const sale = doc.data();
@@ -60,14 +73,28 @@ export default function GeographyPage() {
         if (toDate && date > toDate) return;
 
         const stateCode = String(sale.customer_state || "99");
+        const stateName = GST_STATES[stateCode] || `State ${stateCode}`;
         const accode = String(sale.customer_accode || "");
+        const salesAmt = sale.billamt || sale.amount || 0;
+        const qty = sale.billqty ?? 0;
+        const month = date.slice(0, 7);
 
+        // State totals
         if (!agg[stateCode]) {
-          agg[stateCode] = { bill_count: 0, customers: new Set(), total_sales: 0 };
+          agg[stateCode] = { bill_count: 0, customers: new Set(), total_sales: 0, total_qty: 0 };
         }
         agg[stateCode].bill_count += 1;
         agg[stateCode].customers.add(accode);
-        agg[stateCode].total_sales += sale.billamt || sale.amount || 0;
+        agg[stateCode].total_sales += salesAmt;
+        agg[stateCode].total_qty += qty;
+
+        // Monthly by state
+        if (month) {
+          if (!monthlyByState[month]) monthlyByState[month] = {};
+          if (!monthlyByState[month][stateName]) monthlyByState[month][stateName] = { sales: 0, qty: 0 };
+          monthlyByState[month][stateName].sales += salesAmt;
+          monthlyByState[month][stateName].qty += qty;
+        }
       });
 
       const rows: StateRow[] = Object.entries(agg)
@@ -77,10 +104,29 @@ export default function GeographyPage() {
           bill_count: stats.bill_count,
           customer_count: stats.customers.size,
           total_sales: stats.total_sales,
+          total_qty: stats.total_qty,
         }))
         .sort((a, b) => b.total_sales - a.total_sales);
 
       setStates(rows);
+
+      // Top 5 states by total sales
+      const top5 = rows.slice(0, 5).map((r) => r.statename);
+      setTopStateNames(top5);
+
+      // Build monthly chart rows, sorted chronologically
+      const monthlyRows: MonthlyStateRow[] = Object.entries(monthlyByState)
+        .map(([month, byState]) => {
+          const row: MonthlyStateRow = { month };
+          top5.forEach((name) => {
+            row[name] = byState[name]?.sales || 0;
+            row[`${name}_qty`] = byState[name]?.qty || 0;
+          });
+          return row;
+        })
+        .sort((a, b) => a.month.localeCompare(b.month));
+
+      setMonthlyData(monthlyRows);
     } finally {
       setLoading(false);
     }
@@ -94,7 +140,7 @@ export default function GeographyPage() {
   const totalSales = states.reduce((s, r) => s + r.total_sales, 0);
   const totalCustomers = states.reduce((s, r) => s + r.customer_count, 0);
 
-  const chartData = states.map((s) => ({
+  const barChartData = states.map((s) => ({
     name: s.statename,
     sales: s.total_sales,
   }));
@@ -111,6 +157,7 @@ export default function GeographyPage() {
         <p>Sales breakdown by state and region</p>
       </div>
 
+      {/* Filters */}
       <div className="section-card">
         <div className="filter-row">
           <div>
@@ -136,6 +183,7 @@ export default function GeographyPage() {
         </div>
       </div>
 
+      {/* KPI Cards */}
       <div
         style={{
           display: "grid",
@@ -174,20 +222,112 @@ export default function GeographyPage() {
         <div style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Loading...</div>
       ) : (
         <>
+          {/* Sales by State bar chart */}
           <div className="section-card">
             <div className="section-title">Sales by State</div>
-            <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={chartData}>
+            <ResponsiveContainer width="100%" height={360}>
+              <BarChart data={barChartData} margin={{ top: 4, right: 16, left: 0, bottom: 60 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip formatter={(value) => (typeof value === "number" ? value.toFixed(0) : value)} />
-                <Legend />
-                <Bar dataKey="sales" fill="#3b82f6" name="Sales (₹)" />
+                <XAxis dataKey="name" angle={-35} textAnchor="end" tick={{ fontSize: 12 }} interval={0} />
+                <YAxis tickFormatter={(v) => formatCurrency(v)} width={90} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(v) => formatCurrency(v as number)} />
+                <Bar dataKey="sales" fill="#3b82f6" name="Sales (₹)" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
+          {/* Monthly trend — top 5 states as separate lines */}
+          {monthlyData.length > 0 && topStateNames.length > 0 && (
+            <div className="section-card">
+              <div className="section-title">Monthly Sales Trend — Top States</div>
+              <ResponsiveContainer width="100%" height={380}>
+                <LineChart data={monthlyData} margin={{ top: 4, right: 24, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                  <YAxis tickFormatter={(v) => formatCurrency(v)} width={90} tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v) => formatCurrency(v as number)} />
+                  <Legend />
+                  {topStateNames.map((name, i) => (
+                    <Line
+                      key={name}
+                      type="monotone"
+                      dataKey={name}
+                      stroke={COLORS[i % COLORS.length]}
+                      strokeWidth={2}
+                      dot={false}
+                      name={name}
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+
+              {/* Monthly breakdown table */}
+              <div style={{ overflowX: "auto", marginTop: 16 }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      {topStateNames.map((name) => (
+                        <React.Fragment key={name}>
+                          <th style={{ textAlign: "right" }}>{name}</th>
+                          <th style={{ textAlign: "right" }}>Qty (MT)</th>
+                        </React.Fragment>
+                      ))}
+                      <th style={{ textAlign: "right" }}>Total Sales</th>
+                      <th style={{ textAlign: "right" }}>Total Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthlyData.map((row) => {
+                      const rowSales = topStateNames.reduce((sum, name) => sum + ((row[name] as number) || 0), 0);
+                      const rowQty = topStateNames.reduce((sum, name) => sum + ((row[`${name}_qty`] as number) || 0), 0);
+                      return (
+                        <tr key={row.month}>
+                          <td style={{ fontWeight: 500 }}>{row.month}</td>
+                          {topStateNames.map((name) => (
+                            <React.Fragment key={name}>
+                              <td className="num">{formatCurrency((row[name] as number) || 0)}</td>
+                              <td className="num">{formatNumber((row[`${name}_qty`] as number) || 0)}</td>
+                            </React.Fragment>
+                          ))}
+                          <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(rowSales)}</td>
+                          <td className="num" style={{ fontWeight: 600 }}>{formatNumber(rowQty)}</td>
+                        </tr>
+                      );
+                    })}
+                    {/* Totals row */}
+                    <tr style={{ background: "#f8fafc", fontWeight: 700 }}>
+                      <td style={{ fontWeight: 700 }}>Total</td>
+                      {topStateNames.map((name) => (
+                        <React.Fragment key={name}>
+                          <td className="num">
+                            {formatCurrency(monthlyData.reduce((s, r) => s + ((r[name] as number) || 0), 0))}
+                          </td>
+                          <td className="num">
+                            {formatNumber(monthlyData.reduce((s, r) => s + ((r[`${name}_qty`] as number) || 0), 0))}
+                          </td>
+                        </React.Fragment>
+                      ))}
+                      <td className="num" style={{ fontWeight: 700 }}>
+                        {formatCurrency(monthlyData.reduce(
+                          (s, r) => s + topStateNames.reduce((ss, n) => ss + ((r[n] as number) || 0), 0),
+                          0
+                        ))}
+                      </td>
+                      <td className="num" style={{ fontWeight: 700 }}>
+                        {formatNumber(monthlyData.reduce(
+                          (s, r) => s + topStateNames.reduce((ss, n) => ss + ((r[`${n}_qty`] as number) || 0), 0),
+                          0
+                        ))}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Sales Distribution pie */}
           <div className="section-card">
             <div className="section-title">Sales Distribution</div>
             <ResponsiveContainer width="100%" height={400}>
@@ -211,6 +351,7 @@ export default function GeographyPage() {
             </ResponsiveContainer>
           </div>
 
+          {/* State-wise breakdown table */}
           <div className="section-card">
             <div className="section-title">State-wise Breakdown</div>
             <div style={{ overflowX: "auto" }}>
@@ -222,12 +363,15 @@ export default function GeographyPage() {
                     <th style={{ textAlign: "right" }}>Customers</th>
                     <th style={{ textAlign: "right" }}>Bills</th>
                     <th style={{ textAlign: "right" }}>Total Sales</th>
+                    <th style={{ textAlign: "right" }}>Qty (MT)</th>
+                    <th style={{ textAlign: "right" }}>Avg Rate (₹/MT)</th>
                     <th style={{ width: 100 }}>Share</th>
                   </tr>
                 </thead>
                 <tbody>
                   {states.map((state, i) => {
                     const pct = (state.total_sales / (totalSales || 1)) * 100;
+                    const avgRate = state.total_qty > 0 ? state.total_sales / state.total_qty : 0;
                     return (
                       <tr key={state.statecode}>
                         <td style={{ color: "#94a3b8", fontWeight: 600 }}>{i + 1}</td>
@@ -235,6 +379,8 @@ export default function GeographyPage() {
                         <td className="num">{state.customer_count}</td>
                         <td className="num">{state.bill_count}</td>
                         <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(state.total_sales)}</td>
+                        <td className="num">{formatNumber(state.total_qty)}</td>
+                        <td className="num">{avgRate > 0 ? formatCurrency(avgRate) : "—"}</td>
                         <td>
                           <div style={{ background: "#f1f5f9", borderRadius: 4, height: 7 }}>
                             <div
@@ -245,6 +391,23 @@ export default function GeographyPage() {
                       </tr>
                     );
                   })}
+                  {/* Totals row */}
+                  {states.length > 0 && (() => {
+                    const totQty = states.reduce((s, r) => s + r.total_qty, 0);
+                    const totAvgRate = totQty > 0 ? totalSales / totQty : 0;
+                    return (
+                      <tr style={{ background: "#f8fafc", fontWeight: 700 }}>
+                        <td />
+                        <td style={{ fontWeight: 700 }}>Total</td>
+                        <td className="num">{formatNumber(totalCustomers)}</td>
+                        <td className="num">{formatNumber(states.reduce((s, r) => s + r.bill_count, 0))}</td>
+                        <td className="num" style={{ fontWeight: 700 }}>{formatCurrency(totalSales)}</td>
+                        <td className="num" style={{ fontWeight: 700 }}>{formatNumber(totQty)}</td>
+                        <td className="num" style={{ fontWeight: 700 }}>{totAvgRate > 0 ? formatCurrency(totAvgRate) : "—"}</td>
+                        <td />
+                      </tr>
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>
