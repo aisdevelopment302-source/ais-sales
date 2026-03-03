@@ -9,7 +9,6 @@ import { useAuth } from "@/lib/auth";
 
 interface MonthlyRow {
   month: string;
-  total_weight: number;
   total_sales: number;
 }
 
@@ -32,20 +31,19 @@ export default function OverallAnalysisPage() {
     try {
       const salesSnap = await getDocs(collection(db, "sales"));
 
-      const agg: Record<string, { total_weight: number; total_sales: number }> = {};
+      const agg: Record<string, { total_sales: number }> = {};
 
       salesSnap.forEach((doc) => {
         const sale = doc.data();
-        const date: string = sale.date || "";
+        const date: string = sale.vdate || "";
         if (fromDate && date < fromDate) return;
         if (toDate && date > toDate) return;
 
         const month = date.slice(0, 7); // "YYYY-MM"
         if (!month) return;
 
-        if (!agg[month]) agg[month] = { total_weight: 0, total_sales: 0 };
-        agg[month].total_weight += sale.total_weight || 0;
-        agg[month].total_sales += sale.bill_amount || sale.amount || 0;
+        if (!agg[month]) agg[month] = { total_sales: 0 };
+        agg[month].total_sales += sale.billamt || sale.amount || 0;
       });
 
       const rows: MonthlyRow[] = Object.entries(agg)
@@ -64,12 +62,10 @@ export default function OverallAnalysisPage() {
   }, [user]);
 
   const totalSales = monthly.reduce((sum, m) => sum + (m.total_sales || 0), 0);
-  const totalWeight = monthly.reduce((sum, m) => sum + (m.total_weight || 0), 0);
   const avgMonthly = monthly.length > 0 ? totalSales / monthly.length : 0;
 
   const kpis: SummaryKPI[] = [
     { label: "Total Sales", value: formatCurrency(totalSales), color: "#3b82f6" },
-    { label: "Total Weight (MT)", value: (totalWeight / 1000).toFixed(2), color: "#10b981" },
     { label: "Avg Monthly Sales", value: formatCurrency(avgMonthly), color: "#f59e0b" },
     { label: "Months", value: formatNumber(monthly.length), color: "#8b5cf6" },
   ];
@@ -136,12 +132,10 @@ export default function OverallAnalysisPage() {
               <LineChart data={monthly}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
-                <YAxis yAxisId="left" />
-                <YAxis yAxisId="right" orientation="right" />
+                <YAxis />
                 <Tooltip formatter={(value) => (typeof value === "number" ? value.toFixed(2) : value)} />
                 <Legend />
-                <Line yAxisId="left" type="monotone" dataKey="total_sales" stroke="#3b82f6" name="Sales (₹)" />
-                <Line yAxisId="right" type="monotone" dataKey="total_weight" stroke="#10b981" name="Weight (kg)" />
+                <Line type="monotone" dataKey="total_sales" stroke="#3b82f6" name="Sales (₹)" />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -154,8 +148,6 @@ export default function OverallAnalysisPage() {
                   <tr>
                     <th>Month</th>
                     <th style={{ textAlign: "right" }}>Sales (₹)</th>
-                    <th style={{ textAlign: "right" }}>Weight (kg)</th>
-                    <th style={{ textAlign: "right" }}>Avg Price/kg</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -163,12 +155,6 @@ export default function OverallAnalysisPage() {
                     <tr key={row.month}>
                       <td style={{ fontWeight: 500 }}>{row.month}</td>
                       <td className="num">{formatCurrency(row.total_sales)}</td>
-                      <td className="num">{row.total_weight?.toFixed(0)}</td>
-                      <td className="num">
-                        {row.total_weight > 0
-                          ? (row.total_sales / row.total_weight).toFixed(2)
-                          : "—"}
-                      </td>
                     </tr>
                   ))}
                 </tbody>

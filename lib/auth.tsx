@@ -5,6 +5,7 @@ import {
   User,
   GoogleAuthProvider,
   signInWithRedirect,
+  signInWithPopup,
   getRedirectResult,
   signOut as firebaseSignOut,
   onAuthStateChanged,
@@ -30,23 +31,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Start listening to auth state immediately so loading resolves without
-    // waiting on getRedirectResult (which can hang and keep loading=true forever).
-    // Pages guard their Firestore reads with `if (!user) return`, so it is safe
-    // for the listener to fire before the redirect result is processed.
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
     });
-    // Still call getRedirectResult so Firebase can process the redirect sign-in
-    // and update auth state, which will trigger the listener above.
     getRedirectResult(auth).catch(() => {});
     return unsub;
   }, []);
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    await signInWithRedirect(auth, provider);
+    const isLocalhost = typeof window !== "undefined" && window.location.hostname === "localhost";
+    if (isLocalhost) {
+      await signInWithPopup(auth, provider);
+    } else {
+      await signInWithRedirect(auth, provider);
+    }
   };
 
   const signOut = async () => {

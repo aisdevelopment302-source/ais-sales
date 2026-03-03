@@ -13,11 +13,6 @@ function formatCurrency(value: number | null | undefined): string {
   return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 }
 
-function formatNumber(value: number | null | undefined, decimals = 3): string {
-  if (value == null) return "-";
-  return value.toLocaleString("en-IN", { maximumFractionDigits: decimals });
-}
-
 interface SummaryData {
   company: { coname: string; fyfrom: string; fyto: string; gstin: string };
   sales: {
@@ -26,17 +21,6 @@ interface SummaryData {
     total_bill_amount: number;
     total_gst: number;
     total_cess: number;
-  };
-  cancelled: {
-    cancelled_bills: number;
-    cancelled_amount: number;
-    cancelled_taxable: number;
-  };
-  credit_notes: { cr_bills: number; cr_amount: number };
-  purchases: {
-    total_purchase_bills: number;
-    total_purchase_taxable: number;
-    total_purchase_amount: number;
   };
   top_customers: Array<{ name: string; bill_count: number; total_sales: number }>;
   top_items: Array<{ name: string; total_sales: number; total_weight: number }>;
@@ -62,103 +46,40 @@ export default function DashboardPage() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // Fetch from Firestore collections
         const salesDocs = await getDocs(collection(db, "sales"));
-        const purchaseDocs = await getDocs(collection(db, "purchases_data"));
-        const customerDocs = await getDocs(collection(db, "customers"));
-        const itemDocs = await getDocs(collection(db, "items"));
 
-        // Aggregate sales data
         let total_bills = 0;
         let total_taxable = 0;
         let total_bill_amount = 0;
         let total_gst = 0;
         let total_cess = 0;
-        let cancelled_bills = 0;
-        let cancelled_amount = 0;
-        let cancelled_taxable = 0;
-        let cr_bills = 0;
-        let cr_amount = 0;
-
-        salesDocs.forEach((doc) => {
-          const data = doc.data();
-          if (data.status === "cancelled") {
-            cancelled_bills++;
-            cancelled_amount += data.bill_amount || 0;
-            cancelled_taxable += data.taxable_amount || 0;
-          } else if (data.type === "credit_note") {
-            cr_bills++;
-            cr_amount += data.bill_amount || 0;
-          } else {
-            total_bills++;
-            total_taxable += data.taxable_amount || 0;
-            total_bill_amount += data.bill_amount || 0;
-            total_gst += (data.cgst || 0) + (data.sgst || 0) + (data.igst || 0);
-            total_cess += data.cess || 0;
-          }
-        });
-
-        // Aggregate purchase data
-        let total_purchase_bills = 0;
-        let total_purchase_taxable = 0;
-        let total_purchase_amount = 0;
-
-        purchaseDocs.forEach((doc) => {
-          const data = doc.data();
-          total_purchase_bills++;
-          total_purchase_taxable += data.taxable_amount || 0;
-          total_purchase_amount += data.bill_amount || 0;
-        });
-
-        // Get top customers from sales docs
-        const customerNameMap = new Map<string, string>();
-        customerDocs.forEach((doc) => {
-          const data = doc.data();
-          customerNameMap.set(String(data.code ?? doc.id), data.name ?? doc.id);
-        });
 
         const customerMap = new Map<string, { bill_count: number; total_sales: number }>();
+
         salesDocs.forEach((doc) => {
           const data = doc.data();
-          if (data.status === "cancelled" || data.type === "credit_note") return;
-          const cid = String(data.customer_id ?? "");
-          const name = customerNameMap.get(cid) ?? cid;
+          total_bills++;
+          total_taxable += data.amount || 0;
+          total_bill_amount += data.billamt || 0;
+          total_gst += data.gst || 0;
+          total_cess += data.cess || 0;
+
+          // Top customers: use customer_name directly from sales doc
+          const name = data.customer_name || data.customer_accode || "Unknown";
           const existing = customerMap.get(name) || { bill_count: 0, total_sales: 0 };
           customerMap.set(name, {
             bill_count: existing.bill_count + 1,
-            total_sales: existing.total_sales + (data.bill_amount || 0),
+            total_sales: existing.total_sales + (data.billamt || 0),
           });
         });
+
         const top_customers = Array.from(customerMap.entries())
           .map(([name, data]) => ({ name, ...data }))
           .sort((a, b) => b.total_sales - a.total_sales)
           .slice(0, 5);
 
-        // Get top items from sales docs
-        const itemNameMap = new Map<string, string>();
-        itemDocs.forEach((doc) => {
-          const data = doc.data();
-          itemNameMap.set(String(data.code ?? doc.id), data.name ?? doc.id);
-        });
-
-        const itemMap = new Map<string, { total_sales: number; total_weight: number }>();
-        salesDocs.forEach((doc) => {
-          const data = doc.data();
-          if (data.status === "cancelled" || data.type === "credit_note") return;
-          (data.items || []).forEach((item: { itemcode?: number; qty?: number; amount?: number }) => {
-            const iid = String(item.itemcode ?? "");
-            const name = itemNameMap.get(iid) ?? iid;
-            const existing = itemMap.get(name) || { total_sales: 0, total_weight: 0 };
-            itemMap.set(name, {
-              total_sales: existing.total_sales + (item.amount || 0),
-              total_weight: existing.total_weight + (item.qty || 0),
-            });
-          });
-        });
-        const top_items = Array.from(itemMap.entries())
-          .map(([name, data]) => ({ name, ...data }))
-          .sort((a, b) => b.total_sales - a.total_sales)
-          .slice(0, 5);
+        // No items[] in sales docs — top items not available
+        const top_items: Array<{ name: string; total_sales: number; total_weight: number }> = [];
 
         const summaryData: SummaryData = {
           company: {
@@ -173,17 +94,6 @@ export default function DashboardPage() {
             total_bill_amount,
             total_gst,
             total_cess,
-          },
-          cancelled: {
-            cancelled_bills,
-            cancelled_amount,
-            cancelled_taxable,
-          },
-          credit_notes: { cr_bills, cr_amount },
-          purchases: {
-            total_purchase_bills,
-            total_purchase_taxable,
-            total_purchase_amount,
           },
           top_customers,
           top_items,
@@ -205,7 +115,7 @@ export default function DashboardPage() {
   if (authLoading || loading) return <div style={{ padding: 20 }}>Loading dashboard...</div>;
   if (error || !summary) return <div style={{ padding: 20, color: "red" }}>Error: {error}</div>;
 
-  const { company, sales, cancelled, credit_notes, purchases, top_customers, top_items } = summary;
+  const { company, sales, top_customers, top_items } = summary;
 
   const kpis = [
     {
@@ -225,14 +135,14 @@ export default function DashboardPage() {
     {
       label: "Total GST Collected",
       value: formatCurrency(sales.total_gst),
-      sub: "CGST + SGST + IGST",
+      sub: "GST",
       color: "#f59e0b",
       bg: "#fffbeb",
     },
     {
-      label: "Purchases",
-      value: formatCurrency(purchases.total_purchase_amount),
-      sub: `${purchases.total_purchase_bills} bills`,
+      label: "Total Cess",
+      value: formatCurrency(sales.total_cess),
+      sub: `${sales.total_bills} bills`,
       color: "#8b5cf6",
       bg: "#f5f3ff",
     },
@@ -269,40 +179,8 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Cancelled Bills Warning */}
-      {cancelled && cancelled.cancelled_bills > 0 && (
-        <div
-          style={{
-            background: "#fef2f2",
-            border: "1px solid #fca5a5",
-            borderRadius: 10,
-            padding: "14px 20px",
-            marginBottom: 24,
-            display: "flex",
-            gap: 14,
-            alignItems: "center",
-          }}
-        >
-          <div style={{ fontSize: 20, color: "#dc2626", fontWeight: 700, flexShrink: 0 }}>!</div>
-          <div>
-            <span style={{ fontWeight: 700, color: "#dc2626" }}>
-              {cancelled.cancelled_bills} cancelled bill{cancelled.cancelled_bills !== 1 ? "s" : ""} excluded from revenue
-            </span>
-            <span style={{ color: "#b91c1c", fontSize: 13 }}>
-              {" "}- {formatCurrency(cancelled.cancelled_amount)} total bill amount excluded.
-              View details in Sales &rarr; Cancelled Bills tab.
-            </span>
-          </div>
-        </div>
-      )}
-
       {/* Charts */}
       <DashboardCharts monthly={monthly} topCustomers={top_customers} topItems={top_items} />
-
-      {/* Credit notes note */}
-      <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 8 }}>
-        Credit notes: {credit_notes.cr_bills} bills totalling {formatCurrency(credit_notes.cr_amount)} (not deducted from above)
-      </div>
     </>
   );
 }

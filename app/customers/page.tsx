@@ -25,7 +25,7 @@ const GST_STATES: Record<string, string> = {
 };
 
 interface Customer {
-  id: number;
+  accode: string;
   name: string;
   state_code: string;
   state_name: string;
@@ -48,46 +48,42 @@ export default function CustomersPage() {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [salesSnap, customerSnap] = await Promise.all([
-          getDocs(collection(db, "sales")),
-          getDocs(collection(db, "customers")),
-        ]);
+        const salesSnap = await getDocs(collection(db, "sales"));
 
-        // Build customer info map
-        const customerInfoMap = new Map<number, { name: string; gst_state: string }>();
-        customerSnap.forEach((doc) => {
-          const d = doc.data();
-          customerInfoMap.set(Number(d.code), {
-            name: d.name as string,
-            gst_state: d.gst_state as string ?? "",
-          });
-        });
+        // Aggregate per customer_accode directly from sales docs
+        const aggMap = new Map<
+          string,
+          { name: string; state_code: string; bill_count: number; taxable_amount: number; total_sales: number }
+        >();
 
-        // Aggregate per customer_id
-        const aggMap = new Map<number, { bill_count: number; taxable_amount: number; total_sales: number }>();
         salesSnap.forEach((doc) => {
           const d = doc.data();
-          const id = Number(d.customer_id);
-          const existing = aggMap.get(id) ?? { bill_count: 0, taxable_amount: 0, total_sales: 0 };
+          const accode = String(d.customer_accode ?? "");
+          const name = d.customer_name || accode;
+          const state_code = String(d.customer_state ?? "");
+          const existing = aggMap.get(accode) ?? {
+            name,
+            state_code,
+            bill_count: 0,
+            taxable_amount: 0,
+            total_sales: 0,
+          };
           existing.bill_count += 1;
           existing.taxable_amount += d.amount ?? 0;
-          existing.total_sales += d.bill_amount ?? 0;
-          aggMap.set(id, existing);
+          existing.total_sales += d.billamt ?? 0;
+          aggMap.set(accode, existing);
         });
 
-        const customers: Customer[] = Array.from(aggMap.entries()).map(([id, agg]) => {
-          const info = customerInfoMap.get(id);
-          const state_code = info?.gst_state ?? "";
-          return {
-            id,
-            name: info?.name ?? String(id),
-            state_code,
-            state_name: GST_STATES[state_code] ?? state_code,
-            ...agg,
-          };
-        });
+        const customers: Customer[] = Array.from(aggMap.entries()).map(([accode, agg]) => ({
+          accode,
+          name: agg.name,
+          state_code: agg.state_code,
+          state_name: GST_STATES[agg.state_code] ?? agg.state_code,
+          bill_count: agg.bill_count,
+          taxable_amount: agg.taxable_amount,
+          total_sales: agg.total_sales,
+        }));
 
-        // Default sort: total_sales desc
         customers.sort((a, b) => b.total_sales - a.total_sales);
         setAllCustomers(customers);
       } finally {
@@ -97,14 +93,8 @@ export default function CustomersPage() {
     loadData();
   }, [user]);
 
-  // Derived: filtered + paginated
   const filtered = useCallback(() => {
     let result = allCustomers;
-    if (fromDate || toDate) {
-      // Date filter not applicable at the customer level without re-aggregating.
-      // For simplicity, show all and note — full date filtering would require
-      // re-aggregating sales docs. Currently shows lifetime totals.
-    }
     if (search) {
       const q = search.toLowerCase();
       result = result.filter((c) => c.name.toLowerCase().includes(q));
@@ -176,7 +166,7 @@ export default function CustomersPage() {
                   const pct = (c.total_sales / maxSales) * 100;
                   const rank = (page - 1) * PAGE_SIZE + i + 1;
                   return (
-                    <tr key={c.id}>
+                    <tr key={c.accode}>
                       <td style={{ color: "#94a3b8", fontWeight: 600 }}>{rank}</td>
                       <td style={{ fontWeight: 500 }}>{c.name}</td>
                       <td>

@@ -12,28 +12,23 @@ const PAGE_SIZE = 50;
 interface SaleDoc {
   vno: number;
   billno: string;
-  date: string;
-  customer_id: number;
+  vdate: string;
+  customer_accode: number;
+  customer_name: string;
   amount: number;
-  bill_amount: number;
-  cgst: number;
-  sgst: number;
-  igst: number;
+  billamt: number;
+  gst: number;
   cess: number;
-  total_weight: number;
-  items: Array<{ itemcode: number; itemname: string; weight: number; rate: number; amount: number }>;
 }
 
 interface Bill {
   vno: number;
-  date: string;
+  vdate: string;
   billno: string;
   party_name: string;
   amount: number;
-  cgst: number;
-  sgst: number;
-  igst: number;
-  bill_amount: number;
+  gst: number;
+  billamt: number;
 }
 
 interface MonthlyRow {
@@ -63,37 +58,25 @@ export default function SalesPage() {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [salesSnap, customerSnap] = await Promise.all([
-          getDocs(collection(db, "sales")),
-          getDocs(collection(db, "customers")),
-        ]);
-
-        // Build customer id -> name map
-        const customerMap = new Map<number, string>();
-        customerSnap.forEach((doc) => {
-          const d = doc.data();
-          customerMap.set(Number(d.code), d.name as string);
-        });
+        const salesSnap = await getDocs(collection(db, "sales"));
 
         const bills: Bill[] = [];
         salesSnap.forEach((doc) => {
           const d = doc.data() as SaleDoc;
           bills.push({
             vno: d.vno,
-            date: d.date,
+            vdate: d.vdate,
             billno: d.billno,
-            party_name: customerMap.get(d.customer_id) ?? String(d.customer_id),
+            party_name: d.customer_name || String(d.customer_accode),
             amount: d.amount,
-            cgst: d.cgst ?? 0,
-            sgst: d.sgst ?? 0,
-            igst: d.igst ?? 0,
-            bill_amount: d.bill_amount,
+            gst: d.gst ?? 0,
+            billamt: d.billamt,
           });
         });
 
         // Sort by date desc, vno desc
         bills.sort((a, b) => {
-          if (b.date !== a.date) return b.date.localeCompare(a.date);
+          if (b.vdate !== a.vdate) return b.vdate.localeCompare(a.vdate);
           return b.vno - a.vno;
         });
 
@@ -109,8 +92,8 @@ export default function SalesPage() {
   const { filteredBills, monthlyRows } = useCallback(() => {
     let filtered = allBills;
 
-    if (fromDate) filtered = filtered.filter((b) => b.date >= fromDate);
-    if (toDate) filtered = filtered.filter((b) => b.date <= toDate);
+    if (fromDate) filtered = filtered.filter((b) => b.vdate >= fromDate);
+    if (toDate) filtered = filtered.filter((b) => b.vdate <= toDate);
     if (search) {
       const q = search.toLowerCase();
       filtered = filtered.filter((b) => b.party_name.toLowerCase().includes(q));
@@ -119,7 +102,8 @@ export default function SalesPage() {
     // Monthly aggregation from the same filtered set
     const monthMap = new Map<string, MonthlyRow>();
     filtered.forEach((b) => {
-      const month = b.date.slice(0, 7);
+      const month = b.vdate?.slice(0, 7);
+      if (!month) return;
       const existing = monthMap.get(month) ?? {
         month,
         bill_count: 0,
@@ -129,8 +113,8 @@ export default function SalesPage() {
       };
       existing.bill_count += 1;
       existing.taxable_amount += b.amount;
-      existing.bill_amount += b.bill_amount;
-      existing.gst_amount += (b.cgst + b.sgst + b.igst);
+      existing.bill_amount += b.billamt;
+      existing.gst_amount += b.gst;
       monthMap.set(month, existing);
     });
 
@@ -257,9 +241,7 @@ export default function SalesPage() {
                       <th>Bill No</th>
                       <th>Party</th>
                       <th style={{ textAlign: "right" }}>Taxable Amt</th>
-                      <th style={{ textAlign: "right" }}>CGST</th>
-                      <th style={{ textAlign: "right" }}>SGST</th>
-                      <th style={{ textAlign: "right" }}>IGST</th>
+                      <th style={{ textAlign: "right" }}>GST</th>
                       <th style={{ textAlign: "right" }}>Bill Amt</th>
                     </tr>
                   </thead>
@@ -267,23 +249,21 @@ export default function SalesPage() {
                     {pagedBills.map((b) => (
                       <tr key={b.vno}>
                         <td style={{ color: "#3b82f6", fontWeight: 600 }}>{b.vno}</td>
-                        <td>{b.date}</td>
+                        <td>{b.vdate}</td>
                         <td>{b.billno}</td>
                         <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {b.party_name}
                         </td>
                         <td className="num">{b.amount?.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
-                        <td className="num">{b.cgst?.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
-                        <td className="num">{b.sgst?.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
-                        <td className="num">{b.igst?.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                        <td className="num">{b.gst?.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                         <td className="num" style={{ fontWeight: 600 }}>
-                          {formatCurrency(b.bill_amount)}
+                          {formatCurrency(b.billamt)}
                         </td>
                       </tr>
                     ))}
                     {pagedBills.length === 0 && (
                       <tr>
-                        <td colSpan={9} style={{ textAlign: "center", color: "#94a3b8", padding: 24 }}>
+                        <td colSpan={7} style={{ textAlign: "center", color: "#94a3b8", padding: 24 }}>
                           No records found
                         </td>
                       </tr>

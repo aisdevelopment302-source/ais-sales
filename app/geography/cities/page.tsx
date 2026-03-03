@@ -12,9 +12,7 @@ interface CityRow {
   acname: string;
   city: string;
   bill_count: number;
-  total_weight: number;
   total_sales: number;
-  avg_rate: number;
 }
 
 interface StateOption {
@@ -39,58 +37,42 @@ export default function CitiesPage() {
     if (!user) return;
     setLoading(true);
     try {
-      const [salesSnap, customersSnap] = await Promise.all([
-        getDocs(collection(db, "sales")),
-        getDocs(collection(db, "customers")),
-      ]);
+      const salesSnap = await getDocs(collection(db, "sales"));
 
-      // Build customer map for the selected state: customer_id -> {name, city}
-      const custMap: Record<number, { name: string; city: string }> = {};
-      customersSnap.forEach((doc) => {
-        const d = doc.data();
-        if (d.gst_state === stateCode) {
-          custMap[Number(d.code)] = {
-            name: d.name || "",
-            city: d.address?.line1 || "",
-          };
-        }
-      });
-
-      // Aggregate sales per customer (only those in the selected state)
+      // Aggregate sales per customer_accode for customers in the selected state
       const agg: Record<
-        number,
-        { bill_count: number; total_weight: number; total_sales: number }
+        string,
+        { name: string; city: string; bill_count: number; total_sales: number }
       > = {};
 
       salesSnap.forEach((doc) => {
         const sale = doc.data();
-        const date: string = sale.date || "";
+        const date: string = sale.vdate || "";
         if (fromDate && date < fromDate) return;
         if (toDate && date > toDate) return;
 
-        const custId = Number(sale.customer_id);
-        if (!custMap[custId]) return; // not in selected state
+        // Filter by state
+        if (String(sale.customer_state) !== stateCode) return;
 
-        if (!agg[custId]) agg[custId] = { bill_count: 0, total_weight: 0, total_sales: 0 };
-        agg[custId].bill_count += 1;
-        agg[custId].total_weight += sale.total_weight || 0;
-        agg[custId].total_sales += sale.bill_amount || sale.amount || 0;
+        const accode = String(sale.customer_accode || "");
+        const name = sale.customer_name || accode;
+        const city = sale.customer_address || "";
+
+        if (!agg[accode]) {
+          agg[accode] = { name, city, bill_count: 0, total_sales: 0 };
+        }
+        agg[accode].bill_count += 1;
+        agg[accode].total_sales += sale.billamt || sale.amount || 0;
       });
 
       const rows: CityRow[] = Object.entries(agg)
-        .map(([idStr, stats]) => {
-          const id = Number(idStr);
-          const meta = custMap[id];
-          return {
-            accode: String(id),
-            acname: meta.name,
-            city: meta.city,
-            bill_count: stats.bill_count,
-            total_weight: stats.total_weight,
-            total_sales: stats.total_sales,
-            avg_rate: stats.total_weight > 0 ? stats.total_sales / stats.total_weight : 0,
-          };
-        })
+        .map(([accode, stats]) => ({
+          accode,
+          acname: stats.name,
+          city: stats.city,
+          bill_count: stats.bill_count,
+          total_sales: stats.total_sales,
+        }))
         .sort((a, b) => b.total_sales - a.total_sales);
 
       setCities(rows);
@@ -109,7 +91,7 @@ export default function CitiesPage() {
     fetchCities(stateCode);
   };
 
-  // Group by city (address.line1)
+  // Group by city (customer_address)
   const cityGroups: Record<string, CityRow[]> = {};
   cities.forEach((c) => {
     const key = c.city || "Unknown";
@@ -121,14 +103,12 @@ export default function CitiesPage() {
     .map(([cityName, customers]) => ({
       city: cityName,
       customers: customers.length,
-      weight: customers.reduce((sum, c) => sum + (c.total_weight || 0), 0),
       sales: customers.reduce((sum, c) => sum + (c.total_sales || 0), 0),
     }))
     .sort((a, b) => b.sales - a.sales);
 
-  const chartData = citySummary.map((c) => ({ name: c.city, sales: c.sales, weight: c.weight }));
+  const chartData = citySummary.map((c) => ({ name: c.city, sales: c.sales }));
   const totalSales = citySummary.reduce((sum, c) => sum + c.sales, 0);
-  const totalWeight = citySummary.reduce((sum, c) => sum + c.weight, 0);
 
   return (
     <>
@@ -186,12 +166,6 @@ export default function CitiesPage() {
             {formatCurrency(totalSales)}
           </div>
         </div>
-        <div className="kpi-card" style={{ borderTop: "3px solid #10b981" }}>
-          <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>Total Weight</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: "#10b981", margin: "6px 0 2px" }}>
-            {(totalWeight / 1000).toFixed(2)} MT
-          </div>
-        </div>
         <div className="kpi-card" style={{ borderTop: "3px solid #f59e0b" }}>
           <div style={{ fontSize: 12, color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>Cities</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: "#f59e0b", margin: "6px 0 2px" }}>
@@ -217,12 +191,10 @@ export default function CitiesPage() {
                 <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
-                  <YAxis yAxisId="left" />
-                  <YAxis yAxisId="right" orientation="right" />
+                  <YAxis />
                   <Tooltip formatter={(value) => (typeof value === "number" ? value.toFixed(0) : value)} />
                   <Legend />
-                  <Bar yAxisId="left" dataKey="sales" fill="#3b82f6" name="Sales (₹)" />
-                  <Bar yAxisId="right" dataKey="weight" fill="#10b981" name="Weight (kg)" />
+                  <Bar dataKey="sales" fill="#3b82f6" name="Sales (₹)" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -237,8 +209,6 @@ export default function CitiesPage() {
                     <th>#</th>
                     <th>City</th>
                     <th style={{ textAlign: "right" }}>Customers</th>
-                    <th style={{ textAlign: "right" }}>Weight (kg)</th>
-                    <th style={{ textAlign: "right" }}>Avg Weight/Customer</th>
                     <th style={{ textAlign: "right" }}>Total Sales</th>
                     <th style={{ width: 100 }}>Share</th>
                   </tr>
@@ -251,8 +221,6 @@ export default function CitiesPage() {
                         <td style={{ color: "#94a3b8", fontWeight: 600 }}>{i + 1}</td>
                         <td style={{ fontWeight: 500 }}>{city.city}</td>
                         <td className="num">{city.customers}</td>
-                        <td className="num">{city.weight?.toFixed(2)}</td>
-                        <td className="num">{(city.weight / (city.customers || 1)).toFixed(2)}</td>
                         <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(city.sales)}</td>
                         <td>
                           <div style={{ background: "#f1f5f9", borderRadius: 4, height: 7 }}>
@@ -278,8 +246,6 @@ export default function CitiesPage() {
                     <th>City</th>
                     <th>Customer Name</th>
                     <th style={{ textAlign: "right" }}>Bills</th>
-                    <th style={{ textAlign: "right" }}>Weight (kg)</th>
-                    <th style={{ textAlign: "right" }}>Avg Rate/kg</th>
                     <th style={{ textAlign: "right" }}>Sales (₹)</th>
                   </tr>
                 </thead>
@@ -289,10 +255,6 @@ export default function CitiesPage() {
                       <td style={{ color: "#64748b", fontSize: 12 }}>{customer.city}</td>
                       <td style={{ fontWeight: 500 }}>{customer.acname}</td>
                       <td className="num">{customer.bill_count}</td>
-                      <td className="num">{customer.total_weight?.toFixed(2)}</td>
-                      <td className="num">
-                        {customer.avg_rate?.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-                      </td>
                       <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(customer.total_sales)}</td>
                     </tr>
                   ))}
