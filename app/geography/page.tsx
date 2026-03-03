@@ -66,9 +66,10 @@ export default function GeographyPage() {
       // Per-state per-month: monthlyByState[month][statename] = { sales, qty }
       const monthlyByState: Record<string, Record<string, { sales: number; qty: number }>> = {};
 
-      salesSnap.forEach((doc) => {
-        const sale = doc.data();
-        const date: string = sale.vdate || "";
+        salesSnap.forEach((doc) => {
+          const sale = doc.data();
+          if (sale.invcancelflag === "Y") return;
+          const date: string = sale.vdate || "";
         if (fromDate && date < fromDate) return;
         if (toDate && date > toDate) return;
 

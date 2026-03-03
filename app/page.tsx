@@ -58,6 +58,8 @@ export default function DashboardPage() {
 
         salesDocs.forEach((doc) => {
           const data = doc.data();
+          if (data.invcancelflag === "Y") return; // skip cancelled bills
+
           total_bills++;
           total_taxable += data.amount || 0;
           total_bill_amount += data.billamt || 0;

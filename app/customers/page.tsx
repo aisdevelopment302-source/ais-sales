@@ -62,6 +62,7 @@ export default function CustomersPage() {
 
         salesSnap.forEach((doc) => {
           const d = doc.data();
+          if (d.invcancelflag === "Y") return;
           const accode = String(d.customer_accode ?? "");
           const name = d.customer_name || accode;
           const state_code = String(d.customer_state ?? "");

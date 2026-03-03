@@ -50,9 +50,10 @@ export default function CitiesPage() {
       > = {};
       const monthlyMap: Record<string, { bill_count: number; total_sales: number; total_qty: number }> = {};
 
-      salesSnap.forEach((doc) => {
-        const sale = doc.data();
-        const date: string = sale.vdate || "";
+        salesSnap.forEach((doc) => {
+          const sale = doc.data();
+          if (sale.invcancelflag === "Y") return;
+          const date: string = sale.vdate || "";
         if (fromDate && date < fromDate) return;
         if (toDate && date > toDate) return;
 

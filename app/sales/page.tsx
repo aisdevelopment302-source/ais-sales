@@ -12,6 +12,7 @@ const PAGE_SIZE = 50;
 interface SaleDoc {
   vno: number;
   billno: string;
+  invno: string;
   vdate: string;
   customer_accode: number;
   customer_name: string;
@@ -21,18 +22,27 @@ interface SaleDoc {
   cess: number;
   billqty: number;
   basic_rate: number;
+  invcancelflag: string;
 }
 
 interface Bill {
   vno: number;
   vdate: string;
-  billno: string;
+  invno: string;
   party_name: string;
   amount: number;
   gst: number;
   billamt: number;
   billqty: number;
   basic_rate: number;
+}
+
+interface CancelledBill {
+  vno: number;
+  vdate: string;
+  invno: string;
+  party_name: string;
+  billamt: number;
 }
 
 interface MonthlyRow {
@@ -54,10 +64,10 @@ export default function SalesPage() {
   const [page, setPage] = useState(1);
 
   const [allBills, setAllBills] = useState<Bill[]>([]);
+  const [cancelledBills, setCancelledBills] = useState<CancelledBill[]>([]);
   const [monthly, setMonthly] = useState<MonthlyRow[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Load all data once from Firestore
   useEffect(() => {
     if (!user) return;
     const loadData = async () => {
@@ -66,28 +76,41 @@ export default function SalesPage() {
         const salesSnap = await getDocs(collection(db, "sales"));
 
         const bills: Bill[] = [];
+        const cancelled: CancelledBill[] = [];
+
         salesSnap.forEach((doc) => {
           const d = doc.data() as SaleDoc;
-          bills.push({
-            vno: d.vno,
-            vdate: d.vdate,
-            billno: d.billno,
-            party_name: d.customer_name || String(d.customer_accode),
-            amount: d.amount,
-            gst: d.gst ?? 0,
-            billamt: d.billamt,
-            billqty: d.billqty ?? 0,
-            basic_rate: d.basic_rate ?? 0,
-          });
+          if (d.invcancelflag === "Y") {
+            cancelled.push({
+              vno: d.vno,
+              vdate: d.vdate,
+              invno: d.invno || String(d.billno || d.vno),
+              party_name: d.customer_name || String(d.customer_accode),
+              billamt: d.billamt,
+            });
+          } else {
+            bills.push({
+              vno: d.vno,
+              vdate: d.vdate,
+              invno: d.invno || String(d.billno || d.vno),
+              party_name: d.customer_name || String(d.customer_accode),
+              amount: d.amount,
+              gst: d.gst ?? 0,
+              billamt: d.billamt,
+              billqty: d.billqty ?? 0,
+              basic_rate: d.basic_rate ?? 0,
+            });
+          }
         });
 
-        // Sort by date desc, vno desc
         bills.sort((a, b) => {
           if (b.vdate !== a.vdate) return b.vdate.localeCompare(a.vdate);
           return b.vno - a.vno;
         });
+        cancelled.sort((a, b) => b.vdate.localeCompare(a.vdate));
 
         setAllBills(bills);
+        setCancelledBills(cancelled);
       } finally {
         setLoading(false);
       }
@@ -95,7 +118,6 @@ export default function SalesPage() {
     loadData();
   }, [user]);
 
-  // Derived: filtered bills + monthly rows
   const { filteredBills, monthlyRows } = useCallback(() => {
     let filtered = allBills;
 
@@ -106,7 +128,6 @@ export default function SalesPage() {
       filtered = filtered.filter((b) => b.party_name.toLowerCase().includes(q));
     }
 
-    // Monthly aggregation from the same filtered set
     const monthMap = new Map<string, MonthlyRow>();
     filtered.forEach((b) => {
       const month = b.vdate?.slice(0, 7);
@@ -138,8 +159,6 @@ export default function SalesPage() {
   const totalPages = Math.ceil(filteredBills.length / PAGE_SIZE);
   const pagedBills = filteredBills.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const handleFilter = () => setPage(1);
-
   return (
     <>
       <div className="page-header">
@@ -162,7 +181,7 @@ export default function SalesPage() {
             color: activeTab === "active" ? "#fff" : "#475569",
           }}
         >
-          Active Bills {!loading ? `(${filteredBills.length.toLocaleString()})` : ""}
+          Active Bills {!loading ? `(${allBills.length.toLocaleString()})` : ""}
         </button>
         <button
           onClick={() => setActiveTab("cancelled")}
@@ -177,14 +196,13 @@ export default function SalesPage() {
             color: activeTab === "cancelled" ? "#fff" : "#475569",
           }}
         >
-          Cancelled Bills
+          Cancelled {!loading && cancelledBills.length > 0 ? `(${cancelledBills.length})` : ""}
         </button>
       </div>
 
       {/* ── ACTIVE BILLS TAB ── */}
       {activeTab === "active" && (
         <>
-          {/* Filters */}
           <div className="section-card">
             <div className="filter-row">
               <div>
@@ -203,31 +221,22 @@ export default function SalesPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   style={{ width: 200 }}
-                  onKeyDown={(e) => e.key === "Enter" && handleFilter()}
+                  onKeyDown={(e) => e.key === "Enter" && setPage(1)}
                 />
               </div>
-              <button className="btn-primary" onClick={handleFilter}>
-                Apply
-              </button>
+              <button className="btn-primary" onClick={() => setPage(1)}>Apply</button>
               <button
                 className="btn-primary"
                 style={{ background: "#64748b" }}
-                onClick={() => {
-                  setFromDate("");
-                  setToDate("");
-                  setSearch("");
-                  setPage(1);
-                }}
+                onClick={() => { setFromDate(""); setToDate(""); setSearch(""); setPage(1); }}
               >
                 Clear
               </button>
             </div>
           </div>
 
-          {/* Chart */}
           {monthlyRows.length > 0 && <SalesChart monthly={monthlyRows} />}
 
-          {/* Bills Table */}
           <div className="section-card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>Bills</div>
@@ -245,13 +254,12 @@ export default function SalesPage() {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Vno</th>
+                      <th>Invoice</th>
                       <th>Date</th>
-                      <th>Bill No</th>
                       <th>Party</th>
                       <th style={{ textAlign: "right" }}>Qty (MT)</th>
                       <th style={{ textAlign: "right" }}>Rate (₹/MT)</th>
-                      <th style={{ textAlign: "right" }}>Taxable Amt</th>
+                      <th style={{ textAlign: "right" }}>Taxable</th>
                       <th style={{ textAlign: "right" }}>GST</th>
                       <th style={{ textAlign: "right" }}>Bill Amt</th>
                     </tr>
@@ -259,9 +267,8 @@ export default function SalesPage() {
                   <tbody>
                     {pagedBills.map((b) => (
                       <tr key={b.vno}>
-                        <td style={{ color: "#3b82f6", fontWeight: 600 }}>{b.vno}</td>
+                        <td style={{ color: "#3b82f6", fontWeight: 600 }}>{b.invno}</td>
                         <td>{b.vdate}</td>
-                        <td>{b.billno}</td>
                         <td style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {b.party_name}
                         </td>
@@ -269,14 +276,12 @@ export default function SalesPage() {
                         <td className="num">{b.basic_rate ? formatCurrency(b.basic_rate) : "—"}</td>
                         <td className="num">{b.amount?.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
                         <td className="num">{b.gst?.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
-                        <td className="num" style={{ fontWeight: 600 }}>
-                          {formatCurrency(b.billamt)}
-                        </td>
+                        <td className="num" style={{ fontWeight: 600 }}>{formatCurrency(b.billamt)}</td>
                       </tr>
                     ))}
                     {pagedBills.length === 0 && (
                       <tr>
-                        <td colSpan={9} style={{ textAlign: "center", color: "#94a3b8", padding: 24 }}>
+                        <td colSpan={8} style={{ textAlign: "center", color: "#94a3b8", padding: 24 }}>
                           No records found
                         </td>
                       </tr>
@@ -286,18 +291,11 @@ export default function SalesPage() {
               </div>
             )}
 
-            {/* Pagination */}
             {filteredBills.length > PAGE_SIZE && (
               <div className="pagination">
-                <button disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                  Prev
-                </button>
-                <span>
-                  Page {page} of {totalPages}
-                </span>
-                <button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
-                  Next
-                </button>
+                <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Prev</button>
+                <span>Page {page} of {totalPages}</span>
+                <button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</button>
               </div>
             )}
           </div>
@@ -306,23 +304,46 @@ export default function SalesPage() {
 
       {/* ── CANCELLED BILLS TAB ── */}
       {activeTab === "cancelled" && (
-        <div
-          style={{
-            background: "#f8fafc",
-            border: "1px solid #e2e8f0",
-            borderRadius: 10,
-            padding: "32px 24px",
-            textAlign: "center",
-            color: "#64748b",
-          }}
-        >
-          <div style={{ fontSize: 36, marginBottom: 12, color: "#cbd5e1" }}>—</div>
-          <div style={{ fontWeight: 600, fontSize: 15, color: "#475569", marginBottom: 6 }}>
-            Cancelled bills are not stored in Firebase
+        <div className="section-card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div className="section-title" style={{ marginBottom: 0 }}>Cancelled Bills</div>
+            {!loading && (
+              <span style={{ fontSize: 12, color: "#64748b" }}>{cancelledBills.length} records</span>
+            )}
           </div>
-          <div style={{ fontSize: 13 }}>
-            The ETL sync only imports active (non-cancelled) bills. Cancelled bills are excluded from Firebase and are not shown here.
-          </div>
+
+          {loading ? (
+            <div style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Loading...</div>
+          ) : cancelledBills.length === 0 ? (
+            <div style={{ padding: "32px 24px", textAlign: "center", color: "#94a3b8" }}>
+              No cancelled bills found
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Invoice</th>
+                    <th>Date</th>
+                    <th>Party</th>
+                    <th style={{ textAlign: "right" }}>Bill Amt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cancelledBills.map((b) => (
+                    <tr key={b.vno}>
+                      <td style={{ color: "#ef4444", fontWeight: 600 }}>{b.invno}</td>
+                      <td>{b.vdate}</td>
+                      <td style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {b.party_name}
+                      </td>
+                      <td className="num" style={{ color: "#ef4444" }}>{formatCurrency(b.billamt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </>
