@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 
 # Initialize Firebase
-cred_path = os.path.join(os.path.dirname(__file__), "..", "..", "ais-cv", "config", "firebase-service-account.json")
+cred_path = os.path.join(os.path.dirname(__file__), "..", "firebase-service-account.json")
 cred = credentials.Certificate(cred_path)
 firebase_admin.initialize_app(cred, options={"projectId": "ais-production-e013c"})
 db_firestore = firestore.client()

@@ -39,8 +39,6 @@ interface Customer {
 export default function CustomersPage() {
   const { user } = useAuth();
   const [search, setSearch] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
   const [page, setPage] = useState(1);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [monthlyRows, setMonthlyRows] = useState<{ month: string; label: string; bill_count: number; total_sales: number; total_qty: number }[]>([]);
@@ -116,13 +114,10 @@ export default function CustomersPage() {
   }, [user]);
 
   const filtered = useCallback(() => {
-    let result = allCustomers;
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter((c) => c.name.toLowerCase().includes(q));
-    }
-    return result;
-  }, [allCustomers, search, fromDate, toDate])();
+    if (!search) return allCustomers;
+    const q = search.toLowerCase();
+    return allCustomers.filter((c) => c.name.toLowerCase().includes(q));
+  }, [allCustomers, search])();
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -152,7 +147,7 @@ export default function CustomersPage() {
           <button
             className="btn-primary"
             style={{ background: "#64748b" }}
-            onClick={() => { setSearch(""); setFromDate(""); setToDate(""); setPage(1); }}
+            onClick={() => { setSearch(""); setPage(1); }}
           >
             Clear
           </button>
@@ -163,9 +158,9 @@ export default function CustomersPage() {
         <div className="section-card">
           <div className="section-title">Monthly Sales Trend</div>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={monthlyRows}>
+            <BarChart data={monthlyRows} margin={{ top: 4, right: 16, left: 0, bottom: 40 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="label" />
+              <XAxis dataKey="label" angle={-30} textAnchor="end" tick={{ fontSize: 11 }} interval={0} />
               <YAxis tickFormatter={(v) => formatCurrency(v)} width={90} />
               <Tooltip formatter={(value) => (typeof value === "number" ? formatCurrency(value) : value)} />
               <Legend />
@@ -247,7 +242,13 @@ export default function CustomersPage() {
                       <td style={{ color: "#94a3b8", fontWeight: 600 }}>{rank}</td>
                       <td style={{ fontWeight: 500 }}>{c.name}</td>
                       <td>
-                        <span className="badge badge-blue">{c.state_name || c.state_code || "—"}</span>
+                        <span
+                          className="badge badge-blue"
+                          title={c.state_name || c.state_code || "—"}
+                          style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "inline-block" }}
+                        >
+                          {c.state_name || c.state_code || "—"}
+                        </span>
                       </td>
                       <td className="num">{c.bill_count}</td>
                       <td className="num">{formatNumber(c.total_qty)}</td>

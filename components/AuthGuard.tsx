@@ -33,7 +33,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <Sidebar />
-      <main style={{ flex: 1, padding: "var(--main-padding)", minWidth: 0, overflow: "hidden" }}>
+      <main style={{ flex: 1, padding: "var(--main-padding)", minWidth: 0, overflowX: "clip" }}>
         {children}
       </main>
     </div>

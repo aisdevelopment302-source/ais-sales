@@ -1,13 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { formatCurrency, formatNumber } from "@/lib/api";
+import { formatCurrency, formatNumber, formatMonth } from "@/lib/api";
 import {
   BarChart, Bar, LineChart, Line,
   PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-} from "recharts";
-import { db } from "@/lib/firebase";
+} from "recharts";import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
 import { useAuth } from "@/lib/auth";
 
@@ -21,7 +20,7 @@ const GST_STATES: Record<string, string> = {
   "19": "West Bengal", "20": "Jharkhand", "21": "Odisha",
   "22": "Chhattisgarh", "23": "Madhya Pradesh", "24": "Gujarat",
   "25": "Daman & Diu", "26": "Dadra & Nagar Haveli", "27": "Maharashtra",
-  "28": "Andhra Pradesh", "29": "Karnataka", "30": "Goa",
+  "28": "Andhra Pradesh (Old)", "29": "Karnataka", "30": "Goa",
   "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu",
   "34": "Puducherry", "35": "Andaman & Nicobar", "36": "Telangana",
   "37": "Andhra Pradesh (New)", "38": "Ladakh",
@@ -51,92 +50,96 @@ export default function GeographyPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
-  const fetchData = async () => {
+  useEffect(() => {
     if (!user) return;
-    setLoading(true);
-    try {
-      const salesSnap = await getDocs(collection(db, "sales"));
+    let cancelled = false;
 
-      // Per-state totals
-      const agg: Record<
-        string,
-        { bill_count: number; customers: Set<string>; total_sales: number; total_qty: number }
-      > = {};
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const salesSnap = await getDocs(collection(db, "sales"));
+        if (cancelled) return;
 
-      // Per-state per-month: monthlyByState[month][statename] = { sales, qty }
-      const monthlyByState: Record<string, Record<string, { sales: number; qty: number }>> = {};
+        // Per-state totals
+        const agg: Record<
+          string,
+          { bill_count: number; customers: Set<string>; total_sales: number; total_qty: number }
+        > = {};
+
+        // Per-state per-month: monthlyByState[month][statename] = { sales, qty }
+        const monthlyByState: Record<string, Record<string, { sales: number; qty: number }>> = {};
 
         salesSnap.forEach((doc) => {
           const sale = doc.data();
           if (sale.invcancelflag === "Y") return;
           const date: string = sale.vdate || "";
-        if (fromDate && date < fromDate) return;
-        if (toDate && date > toDate) return;
+          if (fromDate && date < fromDate) return;
+          if (toDate && date > toDate) return;
 
-        const stateCode = String(sale.customer_state || "99");
-        const stateName = GST_STATES[stateCode] || `State ${stateCode}`;
-        const accode = String(sale.customer_accode || "");
-        const salesAmt = sale.billamt || sale.amount || 0;
-        const qty = sale.billqty ?? 0;
-        const month = date.slice(0, 7);
+          const stateCode = String(sale.customer_state || "99");
+          const stateName = GST_STATES[stateCode] || `State ${stateCode}`;
+          const accode = String(sale.customer_accode || "");
+          const salesAmt = sale.billamt || sale.amount || 0;
+          const qty = sale.billqty ?? 0;
+          const month = date.slice(0, 7);
 
-        // State totals
-        if (!agg[stateCode]) {
-          agg[stateCode] = { bill_count: 0, customers: new Set(), total_sales: 0, total_qty: 0 };
-        }
-        agg[stateCode].bill_count += 1;
-        agg[stateCode].customers.add(accode);
-        agg[stateCode].total_sales += salesAmt;
-        agg[stateCode].total_qty += qty;
+          // State totals
+          if (!agg[stateCode]) {
+            agg[stateCode] = { bill_count: 0, customers: new Set(), total_sales: 0, total_qty: 0 };
+          }
+          agg[stateCode].bill_count += 1;
+          agg[stateCode].customers.add(accode);
+          agg[stateCode].total_sales += salesAmt;
+          agg[stateCode].total_qty += qty;
 
-        // Monthly by state
-        if (month) {
-          if (!monthlyByState[month]) monthlyByState[month] = {};
-          if (!monthlyByState[month][stateName]) monthlyByState[month][stateName] = { sales: 0, qty: 0 };
-          monthlyByState[month][stateName].sales += salesAmt;
-          monthlyByState[month][stateName].qty += qty;
-        }
-      });
+          // Monthly by state
+          if (month) {
+            if (!monthlyByState[month]) monthlyByState[month] = {};
+            if (!monthlyByState[month][stateName]) monthlyByState[month][stateName] = { sales: 0, qty: 0 };
+            monthlyByState[month][stateName].sales += salesAmt;
+            monthlyByState[month][stateName].qty += qty;
+          }
+        });
 
-      const rows: StateRow[] = Object.entries(agg)
-        .map(([code, stats]) => ({
-          statecode: code,
-          statename: GST_STATES[code] || `State ${code}`,
-          bill_count: stats.bill_count,
-          customer_count: stats.customers.size,
-          total_sales: stats.total_sales,
-          total_qty: stats.total_qty,
-        }))
-        .sort((a, b) => b.total_sales - a.total_sales);
+        const rows: StateRow[] = Object.entries(agg)
+          .map(([code, stats]) => ({
+            statecode: code,
+            statename: GST_STATES[code] || `State ${code}`,
+            bill_count: stats.bill_count,
+            customer_count: stats.customers.size,
+            total_sales: stats.total_sales,
+            total_qty: stats.total_qty,
+          }))
+          .sort((a, b) => b.total_sales - a.total_sales);
 
-      setStates(rows);
+        setStates(rows);
 
-      // Top 5 states by total sales
-      const top5 = rows.slice(0, 5).map((r) => r.statename);
-      setTopStateNames(top5);
+        // Top 5 states by total sales
+        const top5 = rows.slice(0, 5).map((r) => r.statename);
+        setTopStateNames(top5);
 
-      // Build monthly chart rows, sorted chronologically
-      const monthlyRows: MonthlyStateRow[] = Object.entries(monthlyByState)
-        .map(([month, byState]) => {
-          const row: MonthlyStateRow = { month };
-          top5.forEach((name) => {
-            row[name] = byState[name]?.sales || 0;
-            row[`${name}_qty`] = byState[name]?.qty || 0;
-          });
-          return row;
-        })
-        .sort((a, b) => a.month.localeCompare(b.month));
+        // Build monthly chart rows, sorted chronologically
+        const monthlyRows: MonthlyStateRow[] = Object.entries(monthlyByState)
+          .map(([month, byState]) => {
+            const row: MonthlyStateRow = { month };
+            top5.forEach((name) => {
+              row[name] = byState[name]?.sales || 0;
+              row[`${name}_qty`] = byState[name]?.qty || 0;
+            });
+            return row;
+          })
+          .sort((a, b) => a.month.localeCompare(b.month));
 
-      setMonthlyData(monthlyRows);
-    } finally {
-      setLoading(false);
-    }
-  };
+        setMonthlyData(monthlyRows);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
 
-  useEffect(() => {
-    fetchData();
+    loadData();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user, fromDate, toDate]);
 
   const totalSales = states.reduce((s, r) => s + r.total_sales, 0);
   const totalCustomers = states.reduce((s, r) => s + r.customer_count, 0);
@@ -169,14 +172,13 @@ export default function GeographyPage() {
             <label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>To Date</label>
             <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
           </div>
-          <button className="btn-primary" onClick={fetchData}>Apply</button>
+          <button className="btn-primary" onClick={() => { /* useEffect reacts to date state */ }}>Apply</button>
           <button
             className="btn-primary"
             style={{ background: "#64748b" }}
             onClick={() => {
               setFromDate("");
               setToDate("");
-              setTimeout(fetchData, 50);
             }}
           >
             Clear
@@ -242,9 +244,16 @@ export default function GeographyPage() {
             <div className="section-card">
               <div className="section-title">Monthly Sales Trend — Top States</div>
               <ResponsiveContainer width="100%" height={380}>
-                <LineChart data={monthlyData} margin={{ top: 4, right: 24, left: 0, bottom: 4 }}>
+                <LineChart data={monthlyData} margin={{ top: 4, right: 24, left: 0, bottom: 40 }}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                  <XAxis
+                    dataKey="month"
+                    tickFormatter={formatMonth}
+                    angle={-30}
+                    textAnchor="end"
+                    tick={{ fontSize: 11 }}
+                    interval={0}
+                  />
                   <YAxis tickFormatter={(v) => formatCurrency(v)} width={90} tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(v) => formatCurrency(v as number)} />
                   <Legend />
@@ -284,7 +293,7 @@ export default function GeographyPage() {
                       const rowQty = topStateNames.reduce((sum, name) => sum + ((row[`${name}_qty`] as number) || 0), 0);
                       return (
                         <tr key={row.month}>
-                          <td style={{ fontWeight: 500 }}>{row.month}</td>
+                          <td style={{ fontWeight: 500 }}>{formatMonth(row.month)}</td>
                           {topStateNames.map((name) => (
                             <React.Fragment key={name}>
                               <td className="num">{formatCurrency((row[name] as number) || 0)}</td>
@@ -331,23 +340,35 @@ export default function GeographyPage() {
           {/* Sales Distribution pie */}
           <div className="section-card">
             <div className="section-title">Sales Distribution</div>
-            <ResponsiveContainer width="100%" height={400}>
+            <ResponsiveContainer width="100%" height={380}>
               <PieChart>
                 <Pie
                   data={pieData}
                   cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={(entry) => `${entry.name}: ${((entry.value / (totalSales || 1)) * 100).toFixed(1)}%`}
-                  outerRadius={120}
-                  fill="#8884d8"
+                  cy="45%"
+                  outerRadius={130}
                   dataKey="value"
+                  label={false}
                 >
                   {pieData.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value) => formatCurrency(value as number)} />
+                <Tooltip
+                  formatter={(value, name) => [
+                    `${formatCurrency(value as number)}  (${((value as number / (totalSales || 1)) * 100).toFixed(1)}%)`,
+                    name,
+                  ]}
+                />
+                <Legend
+                  layout="vertical"
+                  align="right"
+                  verticalAlign="middle"
+                  formatter={(value, entry) => {
+                    const pct = ((((entry as { payload?: { value?: number } }).payload?.value) || 0) / (totalSales || 1) * 100).toFixed(1);
+                    return `${value} — ${pct}%`;
+                  }}
+                />
               </PieChart>
             </ResponsiveContainer>
           </div>

@@ -14,16 +14,17 @@ The Firestore database is read-only from the frontend's perspective — all writ
 The sync pipeline:
 
 ```
-Windows billing app (xcomp11.DB)
-    ↓  Google Drive
-~/.openclaw/workspace/xcomp11.DB
-    ↓  gdrive_sync.py  (every 5 min)
-/home/adityajain/AIS/assets/xcomp11.DB
-    ↓  firebase_sync.py
+Windows billing PC (192.168.1.59)
+  D:/CraftInv/Backup/XCOMP11_DD_MM_YYYY.DB  (daily closed backup)
+    ↓  SFTP (binary — avoids CR/LF truncation of Windows SCP)
+/home/adityajain/AIS/assets/xcomp11.DB  (Pi)
+    ↓  firebase_sync.py  (triggered only when a new daily backup appears)
 Firebase Firestore (ais-production-e013c)
     ↓  Firebase client SDK (read-only)
 Next.js dashboard
 ```
+
+**Note:** The live `D:/CraftInv/xcomp11.DB` is locked by the billing software and cannot be read directly. The sync always uses the latest closed daily backup file. Change detection is filename-based (`LAST_SYNCED_FILE = /home/adityajain/AIS/assets/.last_synced_backup`) — Firebase sync only runs when a new backup filename appears, not on every 5-minute poll.
 
 **Collections written by the ETL:**
 
@@ -256,15 +257,15 @@ Authentication is Google OAuth via Firebase Auth. Role-based access (`admin`, `o
 ## ETL Sync Details
 
 **Script:** `api/firebase_sync.py`  
-**Triggered by:** `api/gdrive_sync.py` (runs every 5 minutes as background process)  
-**Credential:** Firebase Admin SDK service account JSON  
+**Triggered by:** `api/db_sync.py` — polls every 5 minutes, only triggers Firebase sync when a new daily backup filename is detected  
+**Credential:** `firebase-service-account.json` (Firebase Admin SDK service account — bypasses Firestore security rules)  
 **Batch strategy:** Firestore writes are chunked in batches of 500 (Firestore hard limit per batch)
 
 ### Functions
 
 | Function | Writes to | Key SQL |
 |---|---|---|
-| `sync_customers_data()` | `customers` | `SELECT ... FROM acmast` (all 667 rows, 2 batches) |
+| `sync_customers_data()` | `customers` | `SELECT ... FROM acmast` (all ~668 rows, chunked in batches of 500) |
 | `sync_items_data()` | `items` | `SELECT DISTINCT ... FROM gstsaledet JOIN item JOIN gstsale WHERE book='L1'` |
 | `sync_sales_data()` | `sales` | Header query + separate line-items query, merged in Python by `vno` |
 | `sync_summary()` | `_meta/summary` | `SELECT COUNT(*), SUM(...) FROM gstsale WHERE book='L1' AND invcancelflag != 'Y'` |
@@ -273,7 +274,9 @@ Authentication is Google OAuth via Firebase Auth. Role-based access (`admin`, `o
 
 | | Before | After |
 |---|---|---|
-| Sales coverage | Latest 500 bills only (`LIMIT 500`) | All bills, no limit (~1,435) |
+| DB source | `~/.openclaw/workspace/xcomp11.DB` via Google Drive (broken) | `/home/adityajain/AIS/assets/xcomp11.DB` via SFTP from Windows |
+| DB sync trigger | `gdrive_sync.py` (mtime check — always fired) | `db_sync.py` (filename check — only fires on new daily backup) |
+| Sales coverage | Latest 500 bills only (`LIMIT 500`) | All bills, no limit (~1,446) |
 | Line-item detail | None — only aggregated `billqty` and `basic_rate` | Full `items[]` array embedded in each sales doc |
 | Cancelled flag | Not stored | `invcancelflag` field included |
 | Invoice number | Not stored | `invno` field included (e.g. `"TI/1571"`) |

@@ -18,7 +18,7 @@ app.add_middleware(
 
 # Initialize Firebase if not already initialized
 try:
-    cred_path = os.path.join(os.path.dirname(__file__), "..", "..", "ais-cv", "config", "firebase-service-account.json")
+    cred_path = os.path.join(os.path.dirname(__file__), "..", "firebase-service-account.json")
     if os.path.exists(cred_path):
         cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)

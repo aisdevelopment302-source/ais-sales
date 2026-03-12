@@ -8,8 +8,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
 } from "recharts";
 import { formatCurrency, formatMonth } from "@/lib/api";
 
@@ -45,8 +43,8 @@ export default function DashboardCharts({ monthly, topCustomers, topItems }: Pro
   const chartData = monthly.map((r) => ({
     ...r,
     label: formatMonth(r.month),
-    bill_amount_cr: r.bill_amount / 100000,
-    taxable_cr: r.taxable_amount / 100000,
+    bill_amount_L: +(r.bill_amount / 100000).toFixed(2),
+    taxable_L: +(r.taxable_amount / 100000).toFixed(2),
   }));
 
   return (
@@ -54,110 +52,144 @@ export default function DashboardCharts({ monthly, topCustomers, topItems }: Pro
       {/* Monthly Sales Chart */}
       <div className="section-card">
         <div className="section-title">Monthly Sales Trend (Bill Amount, ₹ Lakhs)</div>
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-            <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-            <YAxis
-              tick={{ fontSize: 11 }}
-              tickFormatter={(v) => `₹${v}L`}
-            />
-            <Tooltip
-              formatter={(v: number) => [`₹${v.toFixed(2)} L`, "Bill Amount"]}
-              labelStyle={{ fontSize: 12 }}
-            />
-            <Bar dataKey="bill_amount_cr" fill="#3b82f6" radius={[3, 3, 0, 0]} name="Bill Amount" />
-          </BarChart>
-        </ResponsiveContainer>
+        {chartData.length === 0 ? (
+          <div style={{ padding: "32px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+            No sales data available
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${v}L`} />
+              <Tooltip
+                formatter={(v: number) => [`₹${v.toFixed(2)} L`, "Bill Amount"]}
+                labelStyle={{ fontSize: 12 }}
+              />
+              <Bar dataKey="bill_amount_L" fill="#3b82f6" radius={[3, 3, 0, 0]} name="Bill Amount" />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      {/* Top Customers + Top Items side by side */}
+      <div className="grid-2-cols">
         {/* Top Customers */}
-        <div className="section-card">
+        <div className="section-card" style={{ marginBottom: 0 }}>
           <div className="section-title">Top 5 Customers</div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Customer</th>
-                <th style={{ textAlign: "right" }}>Bills</th>
-                <th style={{ textAlign: "right" }}>Sales</th>
-              </tr>
-            </thead>
-            <tbody>
-              {topCustomers.map((c, i) => (
-                <tr key={c.name}>
-                  <td>
-                    <span
+          {topCustomers.length === 0 ? (
+            <div style={{ padding: "16px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+              No data
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Customer</th>
+                  <th style={{ textAlign: "right" }}>Bills</th>
+                  <th style={{ textAlign: "right" }}>Sales</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topCustomers.map((c, i) => (
+                  <tr key={c.name}>
+                    <td>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: 20,
+                          height: 20,
+                          borderRadius: "50%",
+                          background: COLORS[i] || "#94a3b8",
+                          color: "white",
+                          fontSize: 10,
+                          fontWeight: 700,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {i + 1}
+                      </span>
+                    </td>
+                    <td
                       style={{
-                        display: "inline-block",
-                        width: 20,
-                        height: 20,
-                        borderRadius: "50%",
-                        background: COLORS[i] || "#94a3b8",
-                        color: "white",
-                        fontSize: 10,
-                        textAlign: "center",
-                        lineHeight: "20px",
-                        fontWeight: 700,
+                        maxWidth: 160,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
                       }}
                     >
-                      {i + 1}
-                    </span>
-                  </td>
-                  <td style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {c.name}
-                  </td>
-                  <td className="num">{c.bill_count}</td>
-                  <td className="num">{formatCurrency(c.total_sales)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      {c.name}
+                    </td>
+                    <td className="num">{c.bill_count}</td>
+                    <td className="num">{formatCurrency(c.total_sales)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* Top Items */}
-        <div className="section-card">
+        <div className="section-card" style={{ marginBottom: 0 }}>
           <div className="section-title">Top 5 Items by Sales</div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Item</th>
-                <th style={{ textAlign: "right" }}>Wt (MT)</th>
-                <th style={{ textAlign: "right" }}>Sales</th>
-              </tr>
-            </thead>
-            <tbody>
-              {topItems.map((item, i) => (
-                <tr key={item.name}>
-                  <td>
-                    <span
+          {topItems.length === 0 ? (
+            <div style={{ padding: "16px 0", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+              No item data (bills may have no line items)
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Item</th>
+                  <th style={{ textAlign: "right" }}>Wt (MT)</th>
+                  <th style={{ textAlign: "right" }}>Sales</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topItems.map((item, i) => (
+                  <tr key={item.name}>
+                    <td>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: 20,
+                          height: 20,
+                          borderRadius: "50%",
+                          background: COLORS[i] || "#94a3b8",
+                          color: "white",
+                          fontSize: 10,
+                          fontWeight: 700,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {i + 1}
+                      </span>
+                    </td>
+                    <td
                       style={{
-                        display: "inline-block",
-                        width: 20,
-                        height: 20,
-                        borderRadius: "50%",
-                        background: COLORS[i] || "#94a3b8",
-                        color: "white",
-                        fontSize: 10,
-                        textAlign: "center",
-                        lineHeight: "20px",
-                        fontWeight: 700,
+                        maxWidth: 160,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
                       }}
                     >
-                      {i + 1}
-                    </span>
-                  </td>
-                  <td style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {item.name}
-                  </td>
-                  <td className="num">{item.total_weight?.toFixed(3)}</td>
-                  <td className="num">{formatCurrency(item.total_sales)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      {item.name}
+                    </td>
+                    <td className="num">
+                      {item.total_weight != null ? item.total_weight.toFixed(3) : "—"}
+                    </td>
+                    <td className="num">{formatCurrency(item.total_sales)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>

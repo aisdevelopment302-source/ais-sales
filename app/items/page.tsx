@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { formatCurrency, formatNumber } from "@/lib/api";
+import { formatCurrency, formatNumber, formatMonth } from "@/lib/api";
 import {
   LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -32,102 +32,6 @@ export default function ItemsPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
-  const fetchData = async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const salesSnap = await getDocs(collection(db, "sales"));
-
-      // Per-item totals
-      const agg: Record<string, { group_name: string; bill_count: number; total_qty: number; total_sales: number }> = {};
-      // Per-month per-item: monthlyByItem[month][itemname] = { sales, qty }
-      const monthlyByItem: Record<string, Record<string, { sales: number; qty: number }>> = {};
-
-      salesSnap.forEach((doc) => {
-        const sale = doc.data();
-        if (sale.invcancelflag === "Y") return;
-
-        const date: string = sale.vdate || "";
-        if (fromDate && date < fromDate) return;
-        if (toDate && date > toDate) return;
-
-        const month = date.slice(0, 7);
-        const lineItems: Array<{
-          itemname: string;
-          weight: number;
-          taxableamt: number;
-          gstper?: number;
-        }> = Array.isArray(sale.items) ? sale.items : [];
-
-        // Track which item names appeared in this bill (for bill_count — count once per bill)
-        const seenInBill = new Set<string>();
-
-        lineItems.forEach((li) => {
-          const name = li.itemname || "Unknown";
-          const qty = li.weight || 0;
-          const sales = li.taxableamt || 0;
-          const group = ""; // group_name not in items[] array, we'll pick it up later
-
-          if (!agg[name]) agg[name] = { group_name: group, bill_count: 0, total_qty: 0, total_sales: 0 };
-          agg[name].total_qty += qty;
-          agg[name].total_sales += sales;
-          if (!seenInBill.has(name)) {
-            agg[name].bill_count += 1;
-            seenInBill.add(name);
-          }
-
-          // Monthly
-          if (month) {
-            if (!monthlyByItem[month]) monthlyByItem[month] = {};
-            if (!monthlyByItem[month][name]) monthlyByItem[month][name] = { sales: 0, qty: 0 };
-            monthlyByItem[month][name].sales += sales;
-            monthlyByItem[month][name].qty += qty;
-          }
-        });
-      });
-
-      // Also pull group_name from the items master collection
-      const itemsMasterSnap = await getDocs(collection(db, "items"));
-      const groupMap: Record<string, string> = {};
-      itemsMasterSnap.forEach((doc) => {
-        const d = doc.data();
-        if (d.itemname) groupMap[d.itemname] = d.group_name || "";
-      });
-      Object.keys(agg).forEach((name) => {
-        agg[name].group_name = groupMap[name] || "";
-      });
-
-      const rows: ItemStats[] = Object.entries(agg)
-        .map(([itemname, stats]) => ({ itemname, ...stats }))
-        .sort((a, b) => b.total_sales - a.total_sales);
-
-      setItems(rows);
-
-      const top5 = rows.slice(0, 5).map((r) => r.itemname);
-      setTopItemNames(top5);
-
-      const monthlyRows: MonthlyItemRow[] = Object.entries(monthlyByItem)
-        .map(([month, byItem]) => {
-          const row: MonthlyItemRow = { month };
-          top5.forEach((name) => {
-            row[name] = byItem[name]?.sales || 0;
-            row[`${name}_qty`] = byItem[name]?.qty || 0;
-          });
-          return row;
-        })
-        .sort((a, b) => a.month.localeCompare(b.month));
-
-      setMonthlyData(monthlyRows);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-
   const totalSales = items.reduce((s, r) => s + r.total_sales, 0);
   const totalQty   = items.reduce((s, r) => s + r.total_qty, 0);
 
@@ -149,11 +53,11 @@ export default function ItemsPage() {
             <label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>To Date</label>
             <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
           </div>
-          <button className="btn-primary" onClick={fetchData}>Apply</button>
+          <button className="btn-primary" onClick={() => { /* useEffect reacts to fromDate/toDate */ }}>Apply</button>
           <button
             className="btn-primary"
             style={{ background: "#64748b" }}
-            onClick={() => { setFromDate(""); setToDate(""); setTimeout(fetchData, 50); }}
+            onClick={() => { setFromDate(""); setToDate(""); }}
           >
             Clear
           </button>
@@ -191,9 +95,16 @@ export default function ItemsPage() {
             <div className="section-card">
               <div className="section-title">Monthly Sales Trend — Top Items</div>
               <ResponsiveContainer width="100%" height={360}>
-                <LineChart data={monthlyData} margin={{ top: 4, right: 24, left: 0, bottom: 4 }}>
+                <LineChart data={monthlyData} margin={{ top: 4, right: 24, left: 0, bottom: 40 }}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                  <XAxis
+                    dataKey="month"
+                    tickFormatter={formatMonth}
+                    angle={-30}
+                    textAnchor="end"
+                    tick={{ fontSize: 11 }}
+                    interval={0}
+                  />
                   <YAxis tickFormatter={(v) => formatCurrency(v)} width={90} tick={{ fontSize: 11 }} />
                   <Tooltip formatter={(v) => formatCurrency(v as number)} />
                   <Legend />
@@ -233,7 +144,7 @@ export default function ItemsPage() {
                       const rowQty   = topItemNames.reduce((s, n) => s + ((row[`${n}_qty`] as number) || 0), 0);
                       return (
                         <tr key={row.month}>
-                          <td style={{ fontWeight: 500 }}>{row.month}</td>
+                          <td style={{ fontWeight: 500 }}>{formatMonth(row.month)}</td>
                           {topItemNames.map((name) => (
                             <React.Fragment key={name}>
                               <td className="num">{formatCurrency((row[name] as number) || 0)}</td>

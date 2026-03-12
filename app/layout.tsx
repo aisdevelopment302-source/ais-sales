@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import AuthGuard from "@/components/AuthGuard";
@@ -6,7 +6,12 @@ import AuthGuard from "@/components/AuthGuard";
 export const metadata: Metadata = {
   title: "AIS Sales Analytics",
   description: "Sales analytics dashboard for AADINATH INDUSTRIES",
-  viewport: "width=device-width, initial-scale=1.0, maximum-scale=5.0",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export default function RootLayout({

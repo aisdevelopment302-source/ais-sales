@@ -42,6 +42,18 @@ const nav: NavItem[] = [
   },
 ];
 
+/** Returns the current financial year label, e.g. "FY 2025-26" */
+function getCurrentFY(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1; // 1-indexed
+  // Indian FY: April → March
+  if (month >= 4) {
+    return `FY ${year}-${String(year + 1).slice(2)}`;
+  }
+  return `FY ${year - 1}-${String(year).slice(2)}`;
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
@@ -57,6 +69,8 @@ export default function Sidebar() {
     });
     return open;
   });
+
+  const fyLabel = getCurrentFY();
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
@@ -96,6 +110,7 @@ export default function Sidebar() {
           className="sidebar-toggle"
           onClick={() => setIsOpen(!isOpen)}
           aria-label="Toggle navigation"
+          style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
         >
           {isOpen ? "✕" : "☰"}
         </button>
@@ -112,20 +127,20 @@ export default function Sidebar() {
       {/* Sidebar */}
       <div
         className={`sidebar${isMobile && isOpen ? " open" : ""}`}
-        style={isMobile ? { boxShadow: "2px 0 8px rgba(0,0,0,0.3)" } : {}}
+        style={isMobile ? { boxShadow: "2px 0 12px rgba(0,0,0,0.35)" } : {}}
       >
         {/* Logo */}
         <div style={{ padding: "20px 16px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-          <div style={{ fontWeight: 700, color: "#fff", fontSize: isMobile ? 14 : 16 }}>
+          <div style={{ fontWeight: 700, color: "#fff", fontSize: isMobile ? 14 : 15, letterSpacing: "0.01em" }}>
             AADINATH INDUSTRIES
           </div>
-          <div style={{ fontSize: 10, color: "#64748b", marginTop: 3 }}>
-            Sales Analytics · FY 2025-26
+          <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>
+            Sales Analytics · {fyLabel}
           </div>
         </div>
 
         {/* Nav */}
-        <nav style={{ paddingTop: 8 }}>
+        <nav style={{ paddingTop: 8, paddingBottom: 8 }}>
           {nav.map((item) => {
             const hasChildren = !!item.children;
             const isGroupOpen = openGroups.has(item.href);
@@ -155,7 +170,7 @@ export default function Sidebar() {
                         cursor: "pointer",
                         color: "#94a3b8",
                         padding: "10px 12px",
-                        fontSize: 11,
+                        fontSize: 13,
                         lineHeight: 1,
                         transition: "transform 0.2s",
                         transform: isGroupOpen ? "rotate(90deg)" : "rotate(0deg)",
@@ -169,7 +184,7 @@ export default function Sidebar() {
 
                   {/* Sub-links */}
                   {isGroupOpen && (
-                    <div>
+                    <div style={{ marginBottom: 4 }}>
                       {item.children!.map((child) => {
                         const childActive =
                           child.href === item.href
@@ -179,12 +194,10 @@ export default function Sidebar() {
                           <Link
                             key={child.href}
                             href={child.href}
-                            className={`sidebar-link${childActive ? " active" : ""}`}
-                            style={{ paddingLeft: 36, fontSize: 13 }}
+                            className={`sidebar-sub-link${childActive ? " active" : ""}`}
                             onClick={() => isMobile && setIsOpen(false)}
                           >
-                            <span style={{ color: "#475569", fontSize: 10 }}>└</span>
-                            <span>{child.label}</span>
+                            {child.label}
                           </Link>
                         );
                       })}
@@ -211,22 +224,50 @@ export default function Sidebar() {
 
         {/* User / Sign out */}
         {user && (
-          <div style={{ padding: "16px", borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: "auto" }}>
-            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div
+            style={{
+              padding: "14px 16px",
+              borderTop: "1px solid rgba(255,255,255,0.08)",
+              marginTop: "auto",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                color: "#64748b",
+                marginBottom: 8,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {user.email}
             </div>
             <button
               onClick={signOut}
               style={{
                 width: "100%",
-                padding: "8px 12px",
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
+                padding: "7px 12px",
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.14)",
                 borderRadius: 6,
                 color: "#94a3b8",
                 fontSize: 12,
                 cursor: "pointer",
                 textAlign: "left",
+                transition: "background 0.15s, color 0.15s, border-color 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                const el = e.currentTarget;
+                el.style.background = "rgba(239,68,68,0.12)";
+                el.style.color = "#fca5a5";
+                el.style.borderColor = "rgba(239,68,68,0.3)";
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget;
+                el.style.background = "rgba(255,255,255,0.04)";
+                el.style.color = "#94a3b8";
+                el.style.borderColor = "rgba(255,255,255,0.14)";
               }}
             >
               Sign out
